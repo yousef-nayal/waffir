@@ -28,6 +28,11 @@ class ReportService {
   }
 
   /// POST /reports — إرسال بلاغ عن سعر من مستخدم
+  ///
+  /// ✅ إصلاح تسمية — كان يُرسَل تحت مفتاح 'note' بينما العمود الفعلي في
+  /// جدول Report اسمه description (راجع مخطط قاعدة البيانات). اسم المعامل
+  /// [note] بقي كما هو داخل الكود (تفادياً لتغيير أي شاشة تستدعيه)، والتغيير
+  /// اقتصر على مفتاح الحمولة المُرسَلة فعلياً عبر الشبكة فقط.
   Future<ReportModel> submitReport({
     required String priceEntryId,
     required String type, // wrong_price | outdated | duplicate | other
@@ -38,7 +43,7 @@ class ReportService {
       data: {
         'price_entry_id': priceEntryId,
         'type': type,
-        if (note != null && note.isNotEmpty) 'note': note,
+        if (note != null && note.isNotEmpty) 'description': note,
       },
       fromJson: (json) =>
           ReportModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),

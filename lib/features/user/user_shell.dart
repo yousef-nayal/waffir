@@ -42,10 +42,10 @@ class _UserShellState extends State<UserShell> {
         body: IndexedStack(
           index: _stackIndex,
           children: const [
-            HomeScreen(),     // stackIndex 0
+            HomeScreen(), // stackIndex 0
             ProductsScreen(), // stackIndex 1
-            StoresScreen(),   // stackIndex 2
-            ProfileScreen(),  // stackIndex 3
+            StoresScreen(), // stackIndex 2
+            ProfileScreen(), // stackIndex 3
           ],
         ),
         floatingActionButton: FloatingActionButton(
@@ -61,45 +61,62 @@ class _UserShellState extends State<UserShell> {
           elevation: 8,
           color: Theme.of(context).colorScheme.surface,
           child: SizedBox(
-            height: 60,
+            height: 64,
+            // ══════════════════════════════════════════════════════════
+            // ✅ إصلاح جوهري لعدم اتساق المسافات بين الشاشات: كانت العناصر
+            // توزَّع عبر mainAxisAlignment.spaceAround بحجمها الطبيعي فقط
+            // (MainAxisSize.min). المشكلة أن نص العنصر المُحدَّد يتحوّل إلى
+            // FontWeight.w600 (أعرض من الخط العادي) وأيقونته تتغيّر لنسخة
+            // مملوءة — أي أن عرض العنصر المُحدَّد يتغيّر فعلياً بين شاشة
+            // وأخرى، وبما أن spaceAround يعيد توزيع المسافات بناءً على
+            // مجموع عروض كل العناصر، فإن أي تغيّر في عرض عنصر واحد يُزيح
+            // كل المسافات في الصف — وهذا بالضبط سبب اختلاف شكل الشريط بين
+            // "الرئيسية" (حيث الرئيسية محدَّدة) و"الملف الشخصي" (حيث الملف
+            // الشخصي محدَّد، وهو نص أطول بكثير).
+            //
+            // الإصلاح: كل عنصر تنقّل يأخذ الآن حيّزاً ثابتاً بنسبة متساوية
+            // (Expanded flex:1) بغض النظر عن محتواه أو حالة تحديده، وفراغ
+            // الزر العائم أصبح بعرض ثابت غير مرن (64) بدل 48 ليطابق حجم
+            // الزر العائم الفعلي (56) + هامش الفتحة (notchMargin: 8) بدقة.
+            // هذا يضمن مسافات متطابقة تماماً بين كل الأيقونات في كل شاشات
+            // التطبيق، بصرف النظر عن أي عنصر محدَّد حالياً.
+            // ══════════════════════════════════════════════════════════
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              // ══════════════════════════════════════════════════════════
-              // ✅ إصلاح RTL جوهري: في Row داخل سياق RTL، أول عنصر في القائمة
-              // يُرسم في أقصى اليمين، وآخر عنصر يُرسم في أقصى اليسار. الترتيب
-              // السابق كان [الملف، المتاجر، فراغ الزر العائم، المنتجات،
-              // الرئيسية]، ما ينتج عنه فعلياً: "الملف الشخصي" في أقصى اليمين
-              // و"الرئيسية" في أقصى اليسار — أي معكوس تماماً عن الترتيب
-              // الطبيعي المتوقع في تطبيق عربي (الرئيسية أولاً من اليمين).
-              // الترتيب الجديد يعطي، من اليمين إلى اليسار:
-              //   الرئيسية → المنتجات → (الزر العائم) → المتاجر → الملف الشخصي
-              // ══════════════════════════════════════════════════════════
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _NavItem(
-                    icon: Icons.home_outlined,
-                    label: 'الرئيسية',
-                    index: 0,
-                    current: _currentIndex,
-                    onTap: (i) => setState(() => _currentIndex = i)),
-                _NavItem(
-                    icon: Icons.shopping_basket_outlined,
-                    label: 'المنتجات',
-                    index: 1,
-                    current: _currentIndex,
-                    onTap: (i) => setState(() => _currentIndex = i)),
-                const SizedBox(width: 48), // FAB space
-                _NavItem(
-                    icon: Icons.store_outlined,
-                    label: 'المتاجر',
-                    index: 3,
-                    current: _currentIndex,
-                    onTap: (i) => setState(() => _currentIndex = i)),
-                _NavItem(
-                    icon: Icons.person_outline,
-                    label: 'الملف الشخصي',
-                    index: 4,
-                    current: _currentIndex,
-                    onTap: (i) => setState(() => _currentIndex = i)),
+                Expanded(
+                  child: _NavItem(
+                      icon: Icons.home_outlined,
+                      label: 'الرئيسية',
+                      index: 0,
+                      current: _currentIndex,
+                      onTap: (i) => setState(() => _currentIndex = i)),
+                ),
+                Expanded(
+                  child: _NavItem(
+                      icon: Icons.shopping_basket_outlined,
+                      label: 'المنتجات',
+                      index: 1,
+                      current: _currentIndex,
+                      onTap: (i) => setState(() => _currentIndex = i)),
+                ),
+                const SizedBox(width: 64), // فراغ ثابت للزر العائم
+                Expanded(
+                  child: _NavItem(
+                      icon: Icons.store_outlined,
+                      label: 'المتاجر',
+                      index: 3,
+                      current: _currentIndex,
+                      onTap: (i) => setState(() => _currentIndex = i)),
+                ),
+                Expanded(
+                  child: _NavItem(
+                      icon: Icons.person_outline,
+                      label: 'الملف الشخصي',
+                      index: 4,
+                      current: _currentIndex,
+                      onTap: (i) => setState(() => _currentIndex = i)),
+                ),
               ],
             ),
           ),
@@ -131,21 +148,32 @@ class _NavItem extends StatelessWidget {
     return GestureDetector(
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+      // ✅ Container بعرض كامل (يملأ الـ Expanded) بدل Padding أفقي ثابت،
+      // ليكون منطقة اللمس والمحاذاة متطابقة تماماً لكل عنصر بصرف النظر عن
+      // طول نصه.
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(isSelected ? _filledIcon(icon) : icon,
-                color: color, size: 24),
+            Icon(isSelected ? _filledIcon(icon) : icon, color: color, size: 24),
             const SizedBox(height: 2),
-            Text(label,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: color,
-                  fontWeight:
-                      isSelected ? FontWeight.w600 : FontWeight.w400,
-                )),
+            // ✅ FittedBox يمنع فيضان النص الطويل ("الملف الشخصي") داخل
+            // الحيّز الثابت، ويضمن أيضاً أن تحوّل الخط إلى Bold عند التحديد
+            // لا يغيّر عرض الحيّز نفسه (لأن Expanded أعلاه ثابت أصلاً) —
+            // فقط يتقلّص النص تلقائياً إن لزم بدل أن يفيض أو يُزيح التخطيط.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: color,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  )),
+            ),
           ],
         ),
       ),

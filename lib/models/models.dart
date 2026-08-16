@@ -26,13 +26,41 @@ class UserModel {
       id: (json['id'] ?? '').toString(),
       name: json['name'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
-      role: json['role'] as String? ?? 'user',
+      role: _parseRole(json['role']),
       location: json['location'] as String? ?? '',
       pricesCount: json['prices_count'] as int? ?? 0,
       ratingsCount: json['ratings_count'] as int? ?? 0,
       reportsCount: json['reports_count'] as int? ?? 0,
       isActive: json['is_active'] as bool? ?? true,
     );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — العمود الفعلي role في قاعدة البيانات من نوع tinyint
+  // مقيّد بالقيم (0, 1, 2)، بينما كان الكود القديم يفترض دائماً أن الخادم
+  // يُرجع نصاً جاهزاً عبر `json['role'] as String?` — أي أن وصول أي قيمة
+  // رقمية من الـ backend (وهو المتوقع فعلياً بما أن العمود tinyint) كان
+  // سيرمي استثناءً فورياً ويعطّل تحليل استجابة تسجيل الدخول بالكامل.
+  //
+  // هذه الدالة تتعامل مع الحالتين بأمان: رقم مباشر (0/1/2)، أو نص جاهز
+  // ('admin'/'user') في حال كانت طبقة الـ API تُرجعه مُترجَماً مسبقاً.
+  //
+  // الترميز المعتمد داخلياً (بانتظار تأكيد صريح من مطوّر الـ backend):
+  //   0 = مدير عام (super admin) → يُعامَل كـ"admin" داخل التطبيق
+  //   1 = مدير (admin)           → يُعامَل كـ"admin" داخل التطبيق
+  //   2 = مستخدم عادي (user)     → "user"
+  // كلا 0 و1 يُمنحان صلاحية الدخول للوحة الإدارة لأن التطبيق حالياً لا
+  // يفرّق بين مستويين إداريين مختلفين في الواجهة.
+  // ══════════════════════════════════════════════════════════════════════
+  static String _parseRole(dynamic raw) {
+    if (raw == null) return 'user';
+    if (raw is int) return raw == 2 ? 'user' : 'admin';
+    if (raw is String) {
+      final asInt = int.tryParse(raw);
+      if (asInt != null) return asInt == 2 ? 'user' : 'admin';
+      return raw; // نص جاهز مثل 'admin' أو 'user'
+    }
+    return 'user';
   }
 
   Map<String, dynamic> toJson() => {
@@ -197,10 +225,13 @@ class StoreModel {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ✅ PriceEntry — أُضيف productId/storeId (كانا مفقودَين تماماً). قبل هذا
-// الإصلاح كان toJson() يرسل أسماء المنتج/المتجر بدل الـ IDs الحقيقية
-// (خطأ فادح كان سيمنع PriceService.submitPrice من العمل مع أي backend
-// حقيقي يتوقع معرّفات). الآن الحقل مطلوب من واجهة "إضافة سعر" مباشرة.
+// ✅ PriceEntry — أُضيف unitId/brandId (معرّفان حقيقيان اختياريان يطابقان
+// unit_id/brand_id في مخطط قاعدة البيانات الفعلي). الحقلان unit/brand
+// النصيان بقيا كما هما تماماً لعرض الاسم مباشرة في الواجهة (denormalized)،
+// بلا أي تغيير في شكل أي بطاقة سعر. الفرق الوحيد: عند القراءة من الخادم،
+// إن أرسل unit_id/brand_id يُحفظان هنا أيضاً لاستخدامهما لاحقاً (مثلاً عند
+// تعديل سعر موجود مستقبلاً)، وعند الإرسال الفعلي للسعر الجديد
+// (PriceService.submitPrice) تُستخدم هذه المعرّفات الحقيقية بدل النصوص.
 // ══════════════════════════════════════════════════════════════════════════════
 class PriceEntry {
   final String id;
@@ -211,8 +242,10 @@ class PriceEntry {
   final String storeArea;
   final double price;
   final String unit;
+  final String? unitId;
   final double quantity;
   final String brand;
+  final String? brandId;
   final String submittedBy;
   final DateTime submittedAt;
   final int thumbsUp;
@@ -229,8 +262,10 @@ class PriceEntry {
     required this.storeArea,
     required this.price,
     required this.unit,
+    this.unitId,
     required this.quantity,
     this.brand = '',
+    this.brandId,
     required this.submittedBy,
     required this.submittedAt,
     this.thumbsUp = 0,
@@ -249,8 +284,13 @@ class PriceEntry {
       storeArea: json['store_area'] as String? ?? '',
       price: _toDouble(json['price']),
       unit: json['unit'] as String? ?? '',
-      quantity: _toDouble(json['quantity']),
+      unitId: json['unit_id'] != null ? json['unit_id'].toString() : null,
+      // ✅ إصلاح تسمية — عمود قاعدة البيانات الفعلي اسمه amount وليس
+      // quantity. نقرأ amount أولاً، ونتراجع إلى quantity فقط توافقاً مع
+      // بيانات العرض التجريبي (MockData) التي بقيت بالاسم القديم.
+      quantity: _toDouble(json['amount'] ?? json['quantity']),
       brand: json['brand'] as String? ?? '',
+      brandId: json['brand_id'] != null ? json['brand_id'].toString() : null,
       submittedBy: json['submitted_by'] as String? ?? '',
       submittedAt: json['submitted_at'] != null
           ? DateTime.parse(json['submitted_at'] as String)
@@ -262,14 +302,17 @@ class PriceEntry {
     );
   }
 
-  /// ✅ إصلاح: كان يرسل productName/storeName بدل productId/storeId فعلياً.
+  /// ✅ محدَّث — يرسل amount (لا quantity) وunit_id/brand_id الحقيقيين إن
+  /// وُجدا، بدل unit/brand النصيين. ملاحظة: هذا الـtoJson غير مستخدَم حالياً
+  /// في مسار إرسال سعر جديد (PriceService.submitPrice يبني حمولته يدوياً)،
+  /// لكنه أُصلح لتفادي أي استخدام مستقبلي خاطئ له.
   Map<String, dynamic> toJson() => {
         'product_id': productId,
         'store_id': storeId,
         'price': price,
-        'unit': unit,
-        'quantity': quantity,
-        if (brand.isNotEmpty) 'brand': brand,
+        'amount': quantity,
+        if (unitId != null && unitId!.isNotEmpty) 'unit_id': unitId,
+        if (brandId != null && brandId!.isNotEmpty) 'brand_id': brandId,
       };
 
   PriceEntry copyWith({
@@ -287,8 +330,10 @@ class PriceEntry {
       storeArea: storeArea,
       price: price,
       unit: unit,
+      unitId: unitId,
       quantity: quantity,
       brand: brand,
+      brandId: brandId,
       submittedBy: submittedBy,
       submittedAt: submittedAt,
       thumbsUp: thumbsUp ?? this.thumbsUp,
@@ -315,6 +360,11 @@ class ReportModel {
   final String storeArea;
   final String userName;
   final String type; // 'wrong_price' | 'outdated' | 'duplicate' | 'other'
+  // ✅ جديد — يطابق عمود description الفعلي في جدول Report (كان الفرونت
+  // يرسل هذا النص سابقاً تحت مفتاح 'note' الخاطئ ولا يقرأه إطلاقاً عند
+  // الاستقبال). غير مستخدَم حالياً في أي واجهة عرض — إضافته هنا فقط لضمان
+  // عدم فقدانه صامتاً عند القراءة من الخادم مستقبلاً، بلا أي تغيير مرئي.
+  final String? description;
   final DateTime reportedAt;
   final String status; // 'pending' | 'reviewed' | 'resolved'
 
@@ -325,6 +375,7 @@ class ReportModel {
     this.storeArea = '',
     required this.userName,
     required this.type,
+    this.description,
     required this.reportedAt,
     this.status = 'pending',
   });
@@ -337,6 +388,7 @@ class ReportModel {
       storeArea: json['store_area'] as String? ?? '',
       userName: json['user_name'] as String? ?? '',
       type: json['type'] as String? ?? 'other',
+      description: json['description'] as String?,
       reportedAt: json['reported_at'] != null
           ? DateTime.parse(json['reported_at'] as String)
           : DateTime.now(),
@@ -351,6 +403,7 @@ class ReportModel {
         'store_area': storeArea,
         'user_name': userName,
         'type': type,
+        if (description != null) 'description': description,
         'reported_at': reportedAt.toIso8601String(),
         'status': status,
       };
@@ -362,14 +415,25 @@ class ReportModel {
         storeArea: storeArea,
         userName: userName,
         type: type,
+        description: description,
         reportedAt: reportedAt,
         status: status ?? this.status,
       );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ✅ OfficialPrice — أُضيف productId/unitId (معرّفان حقيقيان اختياريان
+// يطابقان product_id/unit_id في مخطط قاعدة البيانات الفعلي). productName/
+// unit النصيان بقيا كما هما تماماً لعرض الاسم مباشرة في كل شاشات العرض
+// (لا تغيير مرئي إطلاقاً)، لكن أصبح بالإمكان الآن إرسال معرّفات حقيقية
+// عند إضافة سعر رسمي جديد من لوحة الإدارة بدل نص اسم منتج حر غير مرتبط
+// فعلياً بجدول Product.
+// ══════════════════════════════════════════════════════════════════════════════
 class OfficialPrice {
   final String id;
+  final String? productId;
   final String productName;
+  final String? unitId;
   final String unit;
   final double quantity;
   final double price;
@@ -377,7 +441,9 @@ class OfficialPrice {
 
   OfficialPrice({
     required this.id,
+    this.productId,
     required this.productName,
+    this.unitId,
     required this.unit,
     required this.quantity,
     required this.price,
@@ -387,9 +453,14 @@ class OfficialPrice {
   factory OfficialPrice.fromJson(Map<String, dynamic> json) {
     return OfficialPrice(
       id: (json['id'] ?? '').toString(),
+      productId:
+          json['product_id'] != null ? json['product_id'].toString() : null,
       productName: json['product_name'] as String? ?? '',
+      unitId: json['unit_id'] != null ? json['unit_id'].toString() : null,
       unit: json['unit'] as String? ?? '',
-      quantity: _toDouble(json['quantity']),
+      // ✅ إصلاح تسمية — عمود قاعدة البيانات الفعلي اسمه amount وليس
+      // quantity، بنفس منطق PriceEntry أعلاه.
+      quantity: _toDouble(json['amount'] ?? json['quantity']),
       price: _toDouble(json['price']),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -399,9 +470,11 @@ class OfficialPrice {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        if (productId != null) 'product_id': productId,
+        if (unitId != null) 'unit_id': unitId,
         'product_name': productName,
         'unit': unit,
-        'quantity': quantity,
+        'amount': quantity,
         'price': price,
         'updated_at': updatedAt.toIso8601String(),
       };
@@ -439,6 +512,7 @@ class OfficialPriceHistoryEntry {
         'changed_at': changedAt.toIso8601String(),
       };
 }
+
 class UnitModel {
   final String id;
   final String name;

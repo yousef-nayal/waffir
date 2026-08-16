@@ -53,7 +53,7 @@ Future<void> showLocationPickerSheet(
                             fontWeight: FontWeight.w700,
                             color: AppColors.textPrimaryOf(ctx))),
                     const SizedBox(height: 2),
-                    Text('اختر الكتلة الإدارية ثم الحي التابع لها',
+                    Text('اختر الكتلة  ثم المنطقة التابع لها',
                         style: TextStyle(
                             fontSize: 12,
                             color: AppColors.textSecondaryOf(ctx))),
@@ -110,7 +110,7 @@ Future<void> showLocationPickerSheet(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
                                 color: AppColors.textPrimaryOf(ctx))),
-                        subtitle: Text('${block.areas.length} حي',
+                        subtitle: Text('${block.areas.length} منطقة',
                             style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.textSecondaryOf(ctx))),

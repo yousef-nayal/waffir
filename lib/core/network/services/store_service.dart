@@ -38,20 +38,28 @@ class StoreService {
     );
   }
 
-  /// POST /stores — إضافة متجر جديد (يمكن استخدامها من المستخدم كطلب "اقتراح متجر")
+  // ══════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل area/sector كنصين حرّين
+  // وترسلهما مباشرة، رغم أن عمود Store.location_id في قاعدة البيانات
+  // الفعلي مفتاح أجنبي إلزامي يشير لصف محدد في جدول Location، لا نص حر.
+  // إرسال نص حر كان سيمنع الخادم من ربط المتجر بموقعه الصحيح، أو كان
+  // سيضطره لعمل مطابقة نصية هشة عرضة للأخطاء الإملائية والتكرار.
+  //
+  // الآن تستقبل locationId (معرّف حقيقي، يُحسَب في الشاشة عبر
+  // CatalogProvider.locationIdForArea بمطابقة اسم الحي المختار مع قائمة
+  // المواقع الفعلية المُحمَّلة من الخادم GET /locations) وترسله مباشرة.
+  // ══════════════════════════════════════════════════════════════════
   Future<StoreModel> createStore({
+    required String locationId,
     required String name,
     required String address,
-    required String area,
-    required String sector,
   }) {
     return _api.post<StoreModel>(
       '/stores',
       data: {
+        'location_id': locationId,
         'name': name,
         'address': address,
-        'area': area,
-        'sector': sector,
       },
       fromJson: (json) =>
           StoreModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),

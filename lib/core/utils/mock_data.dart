@@ -462,7 +462,7 @@ class MockData {
   static List<Map<String, dynamic>> recentActivity = [
     {
       'type': 'price',
-      'text': 'تم إضافة سعر جديد لمنتج زيت زيتون فلسطين',
+      'text': 'تم إضافة منتج جديد (زيت زيتون) و سعر رسمي له',
       'time': 'منذ 5 دقائق',
       'color': 'blue'
     },
@@ -540,4 +540,4 @@ class MockData {
           id: 'h5-2', price: 8700, changedAt: DateTime(2026, 3, 22)),
     ],
   };
-  }
+}

@@ -4,6 +4,19 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/app_provider.dart';
 import '../../../core/constants/app_routes.dart';
 
+// ══════════════════════════════════════════════════════════════════════════
+// PROFILE SCREEN
+// ✅ إعادة تنظيم شاملة لتطابق مخطط حالات الاستخدام (الحساب والإعدادات):
+// شاشة الملف الشخصي أصبحت تحتوي حصرياً على 3 إجراءات فقط:
+//   1) تعديل الملف الشخصي  (نافذة تعديل الاسم — انتقلت من UserSettingsScreen)
+//   2) الإعدادات           (تفتح UserSettingsScreen، وهي التي تضم الآن كل
+//                            بقية العناصر: تغيير الثيم، اللغة، الإشعارات،
+//                            كلمة المرور، الموقع، المساعدة والدعم، عن
+//                            التطبيق، سياسة الخصوصية، الشروط والأحكام)
+//   3) تسجيل الخروج
+// أُزيلت من هنا: المساعدة والدعم، عن التطبيق، سياسة الخصوصية، الشروط
+// والأحكام — جميعها أصبحت ضمن شاشة الإعدادات فقط (راجع products_screen.dart).
+// ══════════════════════════════════════════════════════════════════════════
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -45,45 +58,56 @@ class ProfileScreen extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
                     child: Column(
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            GestureDetector(
-                              onTap: provider.toggleDarkMode,
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(10)),
-                                child: Icon(
-                                    provider.isDarkMode
-                                        ? Icons.light_mode_outlined
-                                        : Icons.dark_mode_outlined,
-                                    color: Colors.white,
-                                    size: 20),
+                        SizedBox(
+                          height: 44,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              const Text('الملف الشخصي',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700)),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: GestureDetector(
+                                  onTap: provider.toggleDarkMode,
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.2),
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
+                                    child: Icon(
+                                        provider.isDarkMode
+                                            ? Icons.light_mode_outlined
+                                            : Icons.dark_mode_outlined,
+                                        color: Colors.white,
+                                        size: 20),
+                                  ),
+                                ),
                               ),
-                            ),
-                            const Text('الملف الشخصي',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700)),
-                            GestureDetector(
-                              onTap: () => _confirmLogout(context, provider),
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(10)),
-                                child: const Icon(Icons.logout,
-                                    color: Colors.white, size: 20),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: GestureDetector(
+                                  onTap: () => _confirmLogout(context, provider),
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.2),
+                                        borderRadius:
+                                            BorderRadius.circular(10)),
+                                    child: const Icon(Icons.logout,
+                                        color: Colors.white, size: 20),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 20),
                         Container(
@@ -141,7 +165,7 @@ class ProfileScreen extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  // Stats — ✅ من المستخدم الحقيقي بدل MockData.users.first
+                  // Stats — من المستخدم الحقيقي بدل MockData.users.first
                   Row(
                     children: [
                       _StatBox(
@@ -161,32 +185,22 @@ class ProfileScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  const _SectionTitle('الإعدادات'),
+                  // ══════════════════════════════════════════════════════
+                  // ✅ الحساب والإعدادات — 3 إجراءات فقط، مطابقة تماماً
+                  // لمخطط حالات الاستخدام: تعديل الملف الشخصي، الإعدادات،
+                  // تسجيل الخروج. كل ما عدا ذلك انتقل إلى داخل شاشة
+                  // الإعدادات (UserSettingsScreen).
+                  // ══════════════════════════════════════════════════════
+                  const _SectionTitle('الحساب'),
+                  _SettingsRow(
+                      icon: Icons.person_outline,
+                      label: 'تعديل الملف الشخصي',
+                      onTap: () => _showEditProfile(context, provider)),
                   _SettingsRow(
                       icon: Icons.settings_outlined,
                       label: 'الإعدادات',
                       onTap: () => Navigator.pushNamed(
                           context, AppRoutes.userSettings)),
-                  const SizedBox(height: 8),
-                  const _SectionTitle('التطبيق'),
-                  _SettingsRow(
-                      icon: Icons.help_outline,
-                      label: 'المساعدة والدعم',
-                      onTap: () => _showSupport(context)),
-                  _SettingsRow(
-                      icon: Icons.info_outline,
-                      label: 'عن التطبيق',
-                      onTap: () => _showAbout(context)),
-                  _SettingsRow(
-                      icon: Icons.shield_outlined,
-                      label: 'سياسة الخصوصية',
-                      onTap: () => Navigator.pushNamed(
-                          context, AppRoutes.privacyPolicy)),
-                  _SettingsRow(
-                      icon: Icons.article_outlined,
-                      label: 'الشروط والأحكام',
-                      onTap: () => Navigator.pushNamed(
-                          context, AppRoutes.termsOfService)),
                   const SizedBox(height: 8),
                   _SettingsRow(
                       icon: Icons.logout,
@@ -198,6 +212,65 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ جديد — نافذة "تعديل الملف الشخصي" انتقلت إلى هنا من
+  // UserSettingsScreen (products_screen.dart) لأن الملف الشخصي أصبح نقطة
+  // الدخول المباشرة لهذا الإجراء حسب مخطط حالات الاستخدام. تُستقبل
+  // [context] كوسيط صريح بما أن ProfileScreen هي StatelessWidget.
+  // ══════════════════════════════════════════════════════════════════════
+  void _showEditProfile(BuildContext context, AppProvider provider) {
+    final nameCtrl = TextEditingController(text: provider.userName);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Directionality(
+          textDirection: TextDirection.rtl,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('تعديل الملف الشخصي',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 16),
+                TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'الاسم الكامل',
+                        prefixIcon: Icon(Icons.person_outline))),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () async {
+                    final navigator = Navigator.of(ctx);
+                    final messenger = ScaffoldMessenger.of(context);
+                    if (nameCtrl.text.trim().isEmpty) return;
+                    final ok = await provider.updateProfile(
+                        name: nameCtrl.text.trim());
+                    navigator.pop();
+                    messenger.showSnackBar(SnackBar(
+                        content: Text(ok
+                            ? 'تم تحديث الملف الشخصي'
+                            : 'تعذّر التحديث، حاول مجدداً'),
+                        backgroundColor:
+                            ok ? AppColors.success : AppColors.error));
+                  },
+                  child: const Text('حفظ'),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -231,99 +304,6 @@ class ProfileScreen extends StatelessWidget {
       Navigator.pushNamedAndRemoveUntil(
           context, AppRoutes.splash, (_) => false);
     }
-  }
-
-  void _showSupport(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('المساعدة والدعم'),
-          content: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                  leading: Icon(Icons.phone, color: AppColors.primary),
-                  title: Text('الهاتف'),
-                  subtitle: Text('+963 11 XXXXXXX')),
-              ListTile(
-                  leading: Icon(Icons.email, color: AppColors.primary),
-                  title: Text('البريد الإلكتروني'),
-                  subtitle: Text('support@waffir.sy')),
-            ],
-          ),
-          actions: [
-            // ══════════════════════════════════════════════════════════
-            // ✅ إصلاح قصّ كلمة "حسناً": كان ارتفاع الزر الأدنى ضيقاً جداً
-            // (minimumSize: Size(0, 40)) بالنسبة لخط Cairo مع علامة التنوين
-            // فوق الألف، فيظهر ارتفاع سطر النص غير كافٍ ويُقصّ الحرف
-            // الأخير/التشكيل بصرياً. الحل: زيادة الارتفاع الأدنى للزر مع
-            // حشوة رأسية صريحة، وتحديد height صريح لِـ TextStyle النص حتى
-            // يحصل التنوين على مساحة كافية ضمن صندوق السطر.
-            // ══════════════════════════════════════════════════════════
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(0, 48),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                child: const Text('حسناً',
-                    style: TextStyle(fontSize: 15, height: 1.4)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showAbout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(children: [
-            Text('💰 وفّر'),
-            SizedBox(width: 8),
-            Text('v1.0.0',
-                style: TextStyle(
-                    color: AppColors.textSecondary, fontSize: 14)),
-          ]),
-          content: const Text(
-              'تطبيق وفّر يساعدك على متابعة أسعار المنتجات الأساسية ومقارنتها بالأسعار الرسمية للحصول على أفضل الأسعار.',
-              style: TextStyle(fontSize: 14)),
-          actions: [
-            // ══════════════════════════════════════════════════════════
-            // ✅ نفس إصلاح قصّ كلمة "حسناً" المطبَّق أعلاه في _showSupport:
-            // ارتفاع أدنى أكبر للزر + height صريح للنص لضمان ظهور التنوين
-            // كاملاً فوق الألف دون قصّ.
-            // ══════════════════════════════════════════════════════════
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(0, 48),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                child: const Text('حسناً',
-                    style: TextStyle(fontSize: 15, height: 1.4)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

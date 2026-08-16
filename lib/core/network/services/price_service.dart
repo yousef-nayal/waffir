@@ -27,14 +27,22 @@ class PriceService {
     );
   }
 
-  /// POST /prices — إرسال سعر جديد من مستخدم (شاشة إضافة سعر)
+  // ══════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل unit كنص حر (مثل 'كغ') وترسله
+  // مباشرة، رغم أن عمود Price.unit_id في قاعدة البيانات الفعلي هو مفتاح
+  // أجنبي إلزامي يشير لجدول Unit، لا نص حر. كما كان اسم الحقل المُرسَل
+  // 'quantity' بينما العمود الفعلي في قاعدة البيانات اسمه amount.
+  //
+  // الآن تستقبل unitId (معرّف حقيقي مُختار من قائمة الوحدات الفعلية)
+  // وbrandId (اختياري، نفس المنطق)، وترسل amount بدل quantity.
+  // ══════════════════════════════════════════════════════════════════
   Future<PriceEntry> submitPrice({
     required String productId,
     required String storeId,
     required double price,
-    required String unit,
-    required double quantity,
-    String? brand,
+    required String unitId,
+    required double amount,
+    String? brandId,
   }) {
     return _api.post<PriceEntry>(
       '/prices',
@@ -42,9 +50,9 @@ class PriceService {
         'product_id': productId,
         'store_id': storeId,
         'price': price,
-        'unit': unit,
-        'quantity': quantity,
-        if (brand != null && brand.isNotEmpty) 'brand': brand,
+        'unit_id': unitId,
+        'amount': amount,
+        if (brandId != null && brandId.isNotEmpty) 'brand_id': brandId,
       },
       fromJson: (json) =>
           PriceEntry.fromJson((json as Map<String, dynamic>)['data'] ?? json),

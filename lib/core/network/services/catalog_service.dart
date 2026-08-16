@@ -23,18 +23,29 @@ class CatalogService {
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل اسم منتج ووحدة كنصوص حرة
+  // (productName/unit) وترسلهما كما هما للخادم، رغم أن مخطط قاعدة
+  // البيانات الفعلي لجدول OfficialPrice لا يحتوي أي عمود نصي لاسم المنتج
+  // أو الوحدة إطلاقاً — فقط product_id وunit_id (مفتاحان أجنبيان). أي
+  // نص يُرسَل بهذا الشكل لا يملك مكاناً حقيقياً ليُخزَّن فيه.
+  //
+  // الآن الدالة تستقبل product_id/unit_id حقيقيين (يُختاران من قائمة
+  // منتجات/وحدات موجودة فعلاً في الشاشة)، وترسل amount بدل quantity
+  // (تطابقاً مع اسم العمود الفعلي في قاعدة البيانات).
+  // ══════════════════════════════════════════════════════════════════
   Future<OfficialPrice> createOfficialPrice({
-    required String productName,
-    required String unit,
-    required double quantity,
+    required String productId,
+    required String unitId,
+    required double amount,
     required double price,
   }) {
     return _api.post<OfficialPrice>(
       '/official-prices',
       data: {
-        'product_name': productName,
-        'unit': unit,
-        'quantity': quantity,
+        'product_id': productId,
+        'unit_id': unitId,
+        'amount': amount,
         'price': price,
       },
       fromJson: (json) => OfficialPrice.fromJson(

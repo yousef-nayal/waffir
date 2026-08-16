@@ -49,10 +49,13 @@ class AppProvider extends ChangeNotifier {
   bool get isAdmin => _isAdmin;
   bool get isLoggedIn => _authStatus == AuthStatus.authenticated;
   bool get isLoading => _authStatus == AuthStatus.loading;
+
   /// اسم الكتلة الإدارية الحالية للمستخدم (مثال: "الكتلة الخامسة")
   String get userBlock => _userBlock;
+
   /// اسم المنطقة/الحي الحالي للمستخدم (مثال: "الفرقان")
   String get userLocation => _userLocation;
+
   /// نص عرض جاهز يجمع المنطقة والكتلة معاً: "الفرقان — الكتلة الخامسة"
   String get userLocationDisplay =>
       AleppoBlocks.displayLabel(block: _userBlock, area: _userLocation);
@@ -112,22 +115,34 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  /// ✅ سعر التسجيل: [block] و[area] يُرسلان معاً إلى الـ backend ضمن حقل
-  /// sector كنص موحّد ("الكتلة الخامسة - الفرقان")، ويُحفظان محلياً بشكل
-  /// منفصل فور نجاح العملية حتى تعرضهما الشاشات فوراً دون انتظار استجابة
-  /// إضافية من الخادم.
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — كانت هذه الدالة تبني نصاً حراً "الكتلة الخامسة -
+  // الفرقان" وترسله للخادم عبر AuthService.register(sector: ...)، رغم أن
+  // عمود User.location_id في قاعدة البيانات الفعلي مفتاح أجنبي إلزامي
+  // يشير لصف محدد في جدول Location — لا يوجد أي عمود نصي لتخزين "قطاع"
+  // على جدول User إطلاقاً.
+  //
+  // أُضيف الوسيط الاختياري [locationId]: يُحسَب في RegisterScreen قبل
+  // استدعاء هذه الدالة عبر CatalogProvider.locationIdForArea(area)، الذي
+  // يطابق اسم الحي المُختار مع قائمة المواقع الفعلية المُحمَّلة من الخادم.
+  // في وضع العرض التجريبي لا حاجة له إطلاقاً (يُتجاهَل).
+  // ══════════════════════════════════════════════════════════════════════
   Future<bool> register({
     required String name,
     required String phone,
     required String password,
     required String block,
     required String area,
+    String? locationId,
   }) async {
     _userBlock = block;
     _userLocation = area;
-    final sector = '$block - $area';
     if (AppConfig.useMockData) {
       return loginMock(name: name, phone: phone);
+    }
+    if (locationId == null || locationId.isEmpty) {
+      _setError('تعذّر تحديد الموقع، حاول اختيار الحي مجدداً');
+      return false;
     }
     _setLoading();
     try {
@@ -135,7 +150,7 @@ class AppProvider extends ChangeNotifier {
         name: name,
         phone: phone,
         password: password,
-        sector: sector,
+        locationId: locationId,
       );
       // ✅ ملاحظة موثّقة في docs/API_ADDENDUM.md: التسجيل يعيد access/refresh
       // token فوراً حسب التوثيق، لكن المستخدم لا يزال بحاجة لتأكيد OTP قبل
@@ -259,11 +274,28 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
+  // ✅ إصلاح جوهري: كانت هذه الدالة الوحيدة (مع changePassword أدناه) التي
+  // تتجاهل AppConfig.useMockData وتستدعي _authService.updateProfile مباشرة
+  // — أي طلب شبكة حقيقي دائماً، حتى في وضع العرض التجريبي. بما أنه لا يوجد
+  // backend حقيقي متصل بعد، كان الطلب يفشل فوراً (ApiException من نوع
+  // network/timeout)، وهذا هو السبب المباشر لظهور "تعذّر التحديث، حاول
+  // مجدداً" عند تعديل الاسم من شاشة "الملف الشخصي". الآن تتبع نفس نمط بقية
+  // دوال AppProvider (login, register, forgotPassword...): في وضع العرض
+  // التجريبي تُحدَّث الحالة محلياً فوراً بلا أي اتصال شبكة.
   Future<bool> updateProfile({required String name}) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      _userName = name;
+      if (_currentUser != null)
+        _currentUser = _currentUser!.copyWith(name: name);
+      notifyListeners();
+      return true;
+    }
     try {
       await _authService.updateProfile(name: name);
       _userName = name;
-      if (_currentUser != null) _currentUser = _currentUser!.copyWith(name: name);
+      if (_currentUser != null)
+        _currentUser = _currentUser!.copyWith(name: name);
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -273,10 +305,15 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
+  // ✅ نفس الإصلاح أعلاه: كانت تتجاهل AppConfig.useMockData أيضاً.
   Future<bool> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      return true;
+    }
     try {
       await _authService.changePassword(
         currentPassword: currentPassword,
@@ -413,7 +450,8 @@ enum LoadingState { initial, loading, success, error }
 // ══════════════════════════════════════════════════════════════════════════
 class ProductProvider extends ChangeNotifier {
   final ProductService _service;
-  ProductProvider({ProductService? service}) : _service = service ?? ProductService();
+  ProductProvider({ProductService? service})
+      : _service = service ?? ProductService();
 
   LoadingState _state = LoadingState.initial;
   List<ProductModel> _products = [];
@@ -501,7 +539,8 @@ class ProductProvider extends ChangeNotifier {
       return true;
     }
     try {
-      final p = await _service.createProduct(name: name, category: category, unit: unit);
+      final p = await _service.createProduct(
+          name: name, category: category, unit: unit);
       _products = [..._products, p];
       notifyListeners();
       return true;
@@ -567,7 +606,8 @@ class StoreProvider extends ChangeNotifier {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
       _stores = MockData.stores.where((s) {
-        final matchesSector = sector == null || sector == 'الكل' || s.sector == sector;
+        final matchesSector =
+            sector == null || sector == 'الكل' || s.sector == sector;
         final matchesSearch = search == null ||
             search.isEmpty ||
             s.name.contains(search) ||
@@ -598,13 +638,23 @@ class StoreProvider extends ChangeNotifier {
     }
   }
 
-  /// ✅ جديد — يُستخدم من ميزة "اقتراح متجر جديد" المتاحة للمستخدم العادي
-  /// (POST /stores موثّقة أصلاً في API_DOCUMENTATION.md لهذا الغرض بالذات)
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — أُضيف الوسيط الاختياري [locationId]: معرّف الموقع
+  // الحقيقي المطابق للحي المختار (يُحسَب في AddStoreScreen قبل الاستدعاء
+  // عبر CatalogProvider.locationIdForArea). في وضع العرض التجريبي يبقى
+  // غير مستخدَم — المتجر يُبنى محلياً بالاسم النصي [area]/[sector] كما كان
+  // تماماً، فلا أي تغيير على تجربة العرض التجريبي أو شكلها.
+  //
+  // في الوضع الحقيقي أصبح locationId إلزامياً فعلياً (وليس فقط شكلياً)
+  // لأن جدول Store في قاعدة البيانات الفعلية يتطلب location_id (مفتاح
+  // أجنبي)، لا نصوص حرة area/sector كما كان يُرسَل سابقاً.
+  // ══════════════════════════════════════════════════════════════════════
   Future<bool> createStore({
     required String name,
     required String address,
     required String area,
     required String sector,
+    String? locationId,
   }) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -622,9 +672,14 @@ class StoreProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     }
+    if (locationId == null || locationId.isEmpty) {
+      _errorMessage = 'تعذّر تحديد الموقع، حاول اختيار الحي مجدداً';
+      notifyListeners();
+      return false;
+    }
     try {
       final s = await _service.createStore(
-          name: name, address: address, area: area, sector: sector);
+          locationId: locationId, name: name, address: address);
       _stores = [..._stores, s];
       notifyListeners();
       return true;
@@ -702,7 +757,8 @@ class PriceProvider extends ChangeNotifier {
   List<PriceEntry> get entries => _entries;
   String? get errorMessage => _errorMessage;
   bool get isLoading => _state == LoadingState.loading;
-/// GET /products/{id}/prices — لعرض كل الأسعار المسجّلة لمنتج معيّن
+
+  /// GET /products/{id}/prices — لعرض كل الأسعار المسجّلة لمنتج معيّن
   ///
   /// ✅ إصلاح جوهري (السبب المباشر لعدم ظهور "الأسعار المسجلة"):
   /// • كانت الدالة تتجاهل [productId] تماماً في وضع العرض التجريبي وتعيد
@@ -764,6 +820,7 @@ class PriceProvider extends ChangeNotifier {
       if (myToken == _requestToken) notifyListeners();
     }
   }
+
   /// GET /prices — لمراجعة الإدارة
   Future<void> loadAdminPrices({String? status}) async {
     _state = LoadingState.loading;
@@ -789,14 +846,19 @@ class PriceProvider extends ChangeNotifier {
     }
   }
 
-  /// POST /prices — من شاشة "إضافة سعر"
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — أُعيدت تسمية الوسيطَين [unit]/[brand] النصيَّين إلى
+  // [unitId]/[brandId] (معرّفان حقيقيان)، و[quantity] بقي كاسم داخلي للـ
+  // Dart لكن يُرسَل الآن للخادم تحت مفتاح amount (اسم العمود الفعلي في
+  // قاعدة البيانات). راجع نفس الملاحظة الكاملة في PriceService.submitPrice.
+  // ══════════════════════════════════════════════════════════════════════
   Future<bool> submitPrice({
     required String productId,
     required String storeId,
     required double price,
-    required String unit,
+    required String unitId,
     required double quantity,
-    String? brand,
+    String? brandId,
   }) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 800));
@@ -807,9 +869,9 @@ class PriceProvider extends ChangeNotifier {
         productId: productId,
         storeId: storeId,
         price: price,
-        unit: unit,
-        quantity: quantity,
-        brand: brand,
+        unitId: unitId,
+        amount: quantity,
+        brandId: brandId,
       );
       return true;
     } on ApiException catch (e) {
@@ -878,7 +940,8 @@ class PriceProvider extends ChangeNotifier {
 // ══════════════════════════════════════════════════════════════════════════
 class ReportProvider extends ChangeNotifier {
   final ReportService _service;
-  ReportProvider({ReportService? service}) : _service = service ?? ReportService();
+  ReportProvider({ReportService? service})
+      : _service = service ?? ReportService();
 
   LoadingState _state = LoadingState.initial;
   List<ReportModel> _reports = [];
@@ -924,7 +987,8 @@ class ReportProvider extends ChangeNotifier {
       return true;
     }
     try {
-      await _service.submitReport(priceEntryId: priceEntryId, type: type, note: note);
+      await _service.submitReport(
+          priceEntryId: priceEntryId, type: type, note: note);
       return true;
     } on ApiException catch (e) {
       _errorMessage = e.message;
@@ -937,13 +1001,17 @@ class ReportProvider extends ChangeNotifier {
   Future<bool> updateStatus(String id, String status) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
-      _reports = _reports.map((r) => r.id == id ? r.copyWith(status: status) : r).toList();
+      _reports = _reports
+          .map((r) => r.id == id ? r.copyWith(status: status) : r)
+          .toList();
       notifyListeners();
       return true;
     }
     try {
       await _service.updateReportStatus(id, status);
-      _reports = _reports.map((r) => r.id == id ? r.copyWith(status: status) : r).toList();
+      _reports = _reports
+          .map((r) => r.id == id ? r.copyWith(status: status) : r)
+          .toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -963,7 +1031,8 @@ class ReportProvider extends ChangeNotifier {
 // ══════════════════════════════════════════════════════════════════════════
 class CatalogProvider extends ChangeNotifier {
   final CatalogService _service;
-  CatalogProvider({CatalogService? service}) : _service = service ?? CatalogService();
+  CatalogProvider({CatalogService? service})
+      : _service = service ?? CatalogService();
 
   List<OfficialPrice> officialPrices = [];
   List<UnitModel> units = [];
@@ -999,10 +1068,24 @@ class CatalogProvider extends ChangeNotifier {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل [productName]/[unit] كنصوص
+  // حرة (من TextField في لوحة الإدارة) وترسلهما مباشرة، رغم أن مخطط قاعدة
+  // البيانات الفعلي لجدول OfficialPrice لا يحتوي أي عمود نصي لاسم المنتج
+  // أو الوحدة — فقط product_id/unit_id (مفتاحان أجنبيان). أي اسم مكتوب
+  // يدوياً كان سيبقى بلا أي ربط حقيقي بجدول Product/Unit.
+  //
+  // الآن تستقبل معرّفين حقيقيين (productId/unitId، يُختاران من قوائم
+  // منتجات/وحدات موجودة فعلاً)، مع [productName]/[unitName] كوسيطين
+  // إضافيين يُستخدَمان فقط لبناء عنصر العرض الفوري محلياً في وضع العرض
+  // التجريبي — لا يُرسَلان للخادم إطلاقاً في الوضع الحقيقي.
+  // ══════════════════════════════════════════════════════════════════════
   Future<bool> addOfficialPrice({
+    required String productId,
     required String productName,
-    required String unit,
-    required double quantity,
+    required String unitId,
+    required String unitName,
+    required double amount,
     required double price,
   }) async {
     if (AppConfig.useMockData) {
@@ -1011,9 +1094,11 @@ class CatalogProvider extends ChangeNotifier {
         ...officialPrices,
         OfficialPrice(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
+          productId: productId,
           productName: productName,
-          unit: unit,
-          quantity: quantity,
+          unitId: unitId,
+          unit: unitName,
+          quantity: amount,
           price: price,
           updatedAt: DateTime.now(),
         ),
@@ -1023,7 +1108,7 @@ class CatalogProvider extends ChangeNotifier {
     }
     try {
       final op = await _service.createOfficialPrice(
-          productName: productName, unit: unit, quantity: quantity, price: price);
+          productId: productId, unitId: unitId, amount: amount, price: price);
       officialPrices = [...officialPrices, op];
       notifyListeners();
       return true;
@@ -1033,7 +1118,8 @@ class CatalogProvider extends ChangeNotifier {
       return false;
     }
   }
-/// GET /official-prices/{id}/history — ✅ جديد
+
+  /// GET /official-prices/{id}/history — ✅ جديد
   /// يُستدعى من OfficialPriceHistoryScreen عند فتح مادة معيّنة.
   Future<void> loadOfficialPriceHistory(String officialPriceId) async {
     isLoadingHistory = true;
@@ -1058,6 +1144,7 @@ class CatalogProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
   // ── الوحدات ──────────────────────────────────────────────────────────
   Future<void> loadUnits() async {
     isLoading = true;
@@ -1085,7 +1172,10 @@ class CatalogProvider extends ChangeNotifier {
       await Future.delayed(const Duration(milliseconds: 300));
       units = [
         ...units,
-        UnitModel(id: DateTime.now().millisecondsSinceEpoch.toString(), name: name, usageCount: 0)
+        UnitModel(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            name: name,
+            usageCount: 0)
       ];
       notifyListeners();
       return true;
@@ -1149,7 +1239,9 @@ class CatalogProvider extends ChangeNotifier {
       brands = [
         ...brands,
         BrandModel(
-            id: DateTime.now().millisecondsSinceEpoch.toString(), name: name, productsCount: 0)
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            name: name,
+            productsCount: 0)
       ];
       notifyListeners();
       return true;
@@ -1228,7 +1320,8 @@ class CatalogProvider extends ChangeNotifier {
       return true;
     }
     try {
-      final l = await _service.createLocation(sector: sector, area: area, landmark: landmark);
+      final l = await _service.createLocation(
+          sector: sector, area: area, landmark: landmark);
       locations = [...locations, l];
       notifyListeners();
       return true;
@@ -1237,6 +1330,31 @@ class CatalogProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ جديد — يبحث عن location_id الحقيقي المطابق لاسم حي معيّن ضمن قائمة
+  // المواقع المُحمَّلة من الخادم (locations، عبر loadLocations أعلاه).
+  //
+  // يُستخدم عند التسجيل (RegisterScreen) أو اقتراح متجر جديد (AddStoreScreen)
+  // لترجمة اختيار (الكتلة، الحي) القادم من منتقي الموقع الثابت
+  // (AleppoBlocks — يبقى كما هو تماماً في الواجهة، بلا أي تغيير مرئي) إلى
+  // location_id فعلي قبل الإرسال للـ backend. هذا ممكن لأن جدول Location
+  // في قاعدة البيانات الفعلية يُبنى بنفس أسماء الأحياء المستخدمة في
+  // AleppoBlocks تماماً (تم التحقق من هذا التطابق يدوياً على عيّنة البيانات
+  // المُدرَجة في قاعدة البيانات).
+  //
+  // يُعيد null إن لم توجد قائمة المواقع بعد (لم تُحمَّل) أو لم يوجد الحي
+  // ضمنها إطلاقاً — الشاشات المستدعية تعرض رسالة خطأ واضحة في هذه الحالة
+  // بدل إرسال طلب بمعرّف فارغ للخادم.
+  // ══════════════════════════════════════════════════════════════════════
+  String? locationIdForArea(String area) {
+    final trimmed = area.trim();
+    if (trimmed.isEmpty) return null;
+    for (final loc in locations) {
+      if (loc.area.trim() == trimmed) return loc.id;
+    }
+    return null;
   }
 
   // ── لوحة التحكم ──────────────────────────────────────────────────────
@@ -1280,7 +1398,8 @@ class CatalogProvider extends ChangeNotifier {
 // ══════════════════════════════════════════════════════════════════════════
 class AdminUsersProvider extends ChangeNotifier {
   final AdminUserService _service;
-  AdminUsersProvider({AdminUserService? service}) : _service = service ?? AdminUserService();
+  AdminUsersProvider({AdminUserService? service})
+      : _service = service ?? AdminUserService();
 
   List<UserModel> users = [];
   bool isLoading = false;
@@ -1316,13 +1435,17 @@ class AdminUsersProvider extends ChangeNotifier {
   Future<bool> setBlocked(String id, bool blocked) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
-      users = users.map((u) => u.id == id ? u.copyWith(isActive: !blocked) : u).toList();
+      users = users
+          .map((u) => u.id == id ? u.copyWith(isActive: !blocked) : u)
+          .toList();
       notifyListeners();
       return true;
     }
     try {
       await _service.setUserBlocked(id, blocked: blocked);
-      users = users.map((u) => u.id == id ? u.copyWith(isActive: !blocked) : u).toList();
+      users = users
+          .map((u) => u.id == id ? u.copyWith(isActive: !blocked) : u)
+          .toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -1335,13 +1458,15 @@ class AdminUsersProvider extends ChangeNotifier {
   Future<bool> setRole(String id, String role) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
-      users = users.map((u) => u.id == id ? u.copyWith(role: role) : u).toList();
+      users =
+          users.map((u) => u.id == id ? u.copyWith(role: role) : u).toList();
       notifyListeners();
       return true;
     }
     try {
       await _service.setUserRole(id, role);
-      users = users.map((u) => u.id == id ? u.copyWith(role: role) : u).toList();
+      users =
+          users.map((u) => u.id == id ? u.copyWith(role: role) : u).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {

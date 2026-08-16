@@ -25,12 +25,21 @@ class AuthService {
     return result;
   }
 
-  /// POST /auth/register
+  // ══════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل [sector] كنص حر مدمج بصيغة
+  // "الكتلة الخامسة - الفرقان" وترسله كما هو، رغم أن عمود User.location_id
+  // في قاعدة البيانات الفعلي مفتاح أجنبي إلزامي يشير لصف محدد في جدول
+  // Location — لا يوجد أي عمود نصي لتخزين "قطاع/كتلة" على جدول User
+  // إطلاقاً. إرسال نص حر بهذا الشكل لا يملك مكاناً حقيقياً ليُخزَّن فيه.
+  //
+  // الآن تستقبل locationId (معرّف حقيقي، يُحسَب في RegisterScreen عبر
+  // CatalogProvider.locationIdForArea) وترسله مباشرة بدل sector.
+  // ══════════════════════════════════════════════════════════════════
   Future<AuthResult> register({
     required String name,
     required String phone,
     required String password,
-    required String sector,
+    required String locationId,
   }) async {
     final response = await _api.post<Map<String, dynamic>>(
       '/auth/register',
@@ -39,7 +48,7 @@ class AuthService {
         'phone': phone,
         'password': password,
         'password_confirmation': password,
-        'sector': sector,
+        'location_id': locationId,
       },
     );
     final result = AuthResult.fromJson(response);

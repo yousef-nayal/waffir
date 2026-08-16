@@ -57,6 +57,10 @@ class _SplashScreenState extends State<SplashScreen> {
                     children: [
                       const Spacer(flex: 2),
                       // Logo
+                      // ✅ استبدال إيموجي "💰" بالشعار الفعلي للتطبيق
+                      // (assets/icon/icon.png) بدل نص إيموجي عام لا يمثّل
+                      // هوية التطبيق البصرية الحقيقية — نفس الشعار المستخدم
+                      // في أيقونة التطبيق وفي نافذة "عن التطبيق".
                       Container(
                         width: 96,
                         height: 96,
@@ -70,8 +74,15 @@ class _SplashScreenState extends State<SplashScreen> {
                                 offset: const Offset(0, 8)),
                           ],
                         ),
-                        child: const Center(
-                            child: Text('💰', style: TextStyle(fontSize: 48))),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: Image.asset(
+                            'assets/icon/icon.png',
+                            width: 96,
+                            height: 96,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 24),
                       const Text(

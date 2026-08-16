@@ -33,6 +33,23 @@ import 'package:provider/provider.dart';
 // — القيمة 0 للعرض تجعله ينكمش على حجم النص فقط فيبدو كحبّة ضيقة غير
 // احترافية. تم إصلاحه أدناه في _showAccountInfo (راجع نفس الإصلاح في
 // profile_screen.dart لشاشتَي "المساعدة والدعم" و"عن التطبيق").
+//
+// ✅ جديد — أُعيد زر تبديل الثيم (فاتح/داكن) إلى شريط العنوان العلوي
+// (AppBar) المشترك في AdminShell، ليظهر في كل شاشات لوحة الإدارة (النظرة
+// العامة، مراجعة الأسعار، البلاغات، المستخدمين، المنتجات، المتاجر،
+// المواقع، الوحدات، العلامات، الأسعار الرسمية، التحليلات) ما عدا شاشة
+// "الإعدادات" (AdminSettingsScreen) تحديداً، لأنها تحتوي أصلاً على عنصر
+// تحكم مخصص لنفس الغرض (مفتاح Switch ضمن بطاقة "الوضع الليلي"، راجع
+// AdminSettingsScreen._buildBody أدناه)، فلا داعي لتكراره في الأعلى هناك.
+//
+// ✅ إصلاح جوهري إضافي (بلا أي تغيير في باقي الشاشات): نافذة "إضافة سعر
+// رسمي جديد" ضمن AdminOfficialPricesScreen كانت تستقبل اسم منتج ووحدة
+// كنصين حرّين (TextField) لا يملكان أي ربط فعلي بجدولي Product/Unit في
+// قاعدة البيانات (مخطط قاعدة البيانات الفعلي لجدول OfficialPrice لا يحتوي
+// أي عمود نصي لاسم المنتج أو الوحدة، فقط product_id/unit_id). استُبدل ذلك
+// بقائمتين منسدلتين تختاران منتجاً/وحدة موجودَين فعلاً، بنفس نمط النافذة
+// المطابق تماماً (نفس العنوان، الحقول، الأزرار)، راجع
+// AdminOfficialPricesScreen._showAddOfficialPrice أدناه للتفاصيل الكاملة.
 // ══════════════════════════════════════════════════════════════════════════════
 class AdminShell extends StatefulWidget {
   const AdminShell({super.key});
@@ -75,6 +92,11 @@ class _AdminShellState extends State<AdminShell> {
     Icons.bar_chart,
     Icons.settings_outlined,
   ];
+
+  // ✅ فهرس شاشة "الإعدادات" ضمن _labels/_icons — يُستخدم لإخفاء زر تبديل
+  // الثيم في شريط العنوان العلوي عندما تكون هذه الشاشة هي المعروضة حالياً،
+  // بما أنها تحتوي أصلاً عنصر تحكم مخصص لنفس الغرض.
+  static const int _settingsIndex = 11;
 
   Widget get _currentScreen {
     switch (_selectedIndex) {
@@ -134,6 +156,9 @@ class _AdminShellState extends State<AdminShell> {
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width >= _wideBreakpoint;
+    // ✅ جديد — نحتاج AppProvider هنا لعرض وتبديل حالة الوضع الداكن عبر
+    // الزر المُعاد في شريط العنوان العلوي.
+    final appProvider = context.watch<AppProvider>();
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -148,6 +173,28 @@ class _AdminShellState extends State<AdminShell> {
                   : Scaffold.of(ctx).openDrawer(),
             ),
           ),
+          // ══════════════════════════════════════════════════════════════
+          // ✅ جديد — زر تبديل الثيم (فاتح/داكن) في شريط العنوان العلوي،
+          // يظهر في كل شاشات لوحة الإدارة ما عدا شاشة "الإعدادات" (فهرسها
+          // _settingsIndex) لأنها تحتوي على عنصر تحكم مخصص لنفس الغرض
+          // (Switch ضمن بطاقة "الوضع الليلي").
+          // ══════════════════════════════════════════════════════════════
+          actions: _selectedIndex == _settingsIndex
+              ? null
+              : [
+                  IconButton(
+                    icon: Icon(
+                      appProvider.isDarkMode
+                          ? Icons.light_mode_outlined
+                          : Icons.dark_mode_outlined,
+                    ),
+                    tooltip: appProvider.isDarkMode
+                        ? 'الوضع الفاتح'
+                        : 'الوضع الداكن',
+                    onPressed: appProvider.toggleDarkMode,
+                  ),
+                  const SizedBox(width: 4),
+                ],
         ),
         drawer: isWide ? null : Drawer(child: _sidebarList(true)),
         body: isWide
@@ -1817,7 +1864,7 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
                   const SizedBox(height: 12),
                   const Align(
                     alignment: Alignment.centerRight,
-                    child: Text('الحي', style: TextStyle(fontSize: 13)),
+                    child: Text('المنطقة', style: TextStyle(fontSize: 13)),
                   ),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
@@ -2380,6 +2427,18 @@ class _AdminBrandsScreenState extends State<AdminBrandsScreen> {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // OFFICIAL PRICES SCREEN — ✅ من CatalogProvider، إضافة فعلية
+//
+// ✅ إصلاح جوهري في نافذة "إضافة سعر رسمي جديد" (بلا أي تغيير في شكل
+// النافذة أو ترتيب حقولها): كان حقلا "المنتج" و"الوحدة" عبارة عن نص حر
+// (TextField)، رغم أن مخطط قاعدة البيانات الفعلي لجدول OfficialPrice لا
+// يحتوي أي عمود نصي لاسم المنتج أو الوحدة — فقط product_id/unit_id
+// (مفتاحان أجنبيان يشيران لجدولي Product/Unit). أي اسم يُكتب يدوياً لا
+// يملك أي ربط حقيقي بقاعدة البيانات ولا يمكن للخادم حفظه بشكل صحيح.
+//
+// استُبدل ذلك بقائمتين منسدلتين (نفس نمط _showAddLocation أعلاه تماماً):
+// "المنتج" تُختار من ProductProvider.products الحقيقية، و"الوحدة" من
+// CatalogProvider.units الحقيقية — بنفس عنوان النافذة، ونفس ترتيب الحقول
+// (المنتج، الكمية، الوحدة، السعر)، ونفس شكل وحجم الأزرار تماماً.
 // ══════════════════════════════════════════════════════════════════════════════
 class AdminOfficialPricesScreen extends StatefulWidget {
   const AdminOfficialPricesScreen({super.key});
@@ -2398,137 +2457,189 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
   }
 
   void _showAddOfficialPrice(BuildContext context) {
-    final productCtrl = TextEditingController();
     final qtyCtrl = TextEditingController(text: '1');
-    final unitCtrl = TextEditingController(text: 'كيلوغرام');
     final priceCtrl = TextEditingController();
+
+    // ✅ تحميل قوائم المنتجات والوحدات الحقيقية (إن لم تكن محمَّلة أصلاً)
+    // قبل فتح النافذة، حتى تظهر القائمتان المنسدلتان مملوءتين فوراً.
+    final productProvider = context.read<ProductProvider>();
+    final catalogProvider = context.read<CatalogProvider>();
+    if (productProvider.products.isEmpty) productProvider.loadProducts();
+    if (catalogProvider.units.isEmpty) catalogProvider.loadUnits();
+
+    String? selectedProductId;
+    String? selectedUnitId;
+
     showDialog(
       context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: const Text(
-            'إضافة سعر رسمي جديد',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Align(
-                alignment: Alignment.centerRight,
-                child: Text('المنتج', style: TextStyle(fontSize: 13)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          // ✅ watch هنا (لا read) لتحديث محتوى القائمتين فور اكتمال
+          // التحميل حتى لو فُتحت النافذة قبل وصول الاستجابة.
+          final products = context.watch<ProductProvider>().products;
+          final units = context.watch<CatalogProvider>().units;
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: productCtrl,
-                decoration: const InputDecoration(hintText: 'اسم المنتج'),
+              title: const Text(
+                'إضافة سعر رسمي جديد',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('الكمية', style: TextStyle(fontSize: 13)),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: qtyCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(hintText: '1'),
-                        ),
-                      ],
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child: Text('المنتج', style: TextStyle(fontSize: 13)),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedProductId,
+                      isExpanded: true,
+                      hint: const Text('اختر المنتج',
+                          style: TextStyle(fontSize: 13)),
+                      items: products
+                          .map((p) => DropdownMenuItem(
+                              value: p.id,
+                              child: Text(p.name,
+                                  style: const TextStyle(fontSize: 14))))
+                          .toList(),
+                      onChanged: (v) =>
+                          setDialogState(() => selectedProductId = v),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
                       children: [
-                        const Text('الوحدة', style: TextStyle(fontSize: 13)),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: unitCtrl,
-                          decoration: const InputDecoration(
-                            hintText: 'كيلوغرام',
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('الكمية',
+                                  style: TextStyle(fontSize: 13)),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: qtyCtrl,
+                                keyboardType: TextInputType.number,
+                                decoration:
+                                    const InputDecoration(hintText: '1'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('الوحدة',
+                                  style: TextStyle(fontSize: 13)),
+                              const SizedBox(height: 6),
+                              DropdownButtonFormField<String>(
+                                initialValue: selectedUnitId,
+                                isExpanded: true,
+                                hint: const Text('اختر',
+                                    style: TextStyle(fontSize: 13)),
+                                items: units
+                                    .map((u) => DropdownMenuItem(
+                                        value: u.id,
+                                        child: Text(u.name,
+                                            style:
+                                                const TextStyle(fontSize: 14))))
+                                    .toList(),
+                                onChanged: (v) =>
+                                    setDialogState(() => selectedUnitId = v),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Align(
-                alignment: Alignment.centerRight,
-                child: Text('السعر (ل.س)', style: TextStyle(fontSize: 13)),
-              ),
-              const SizedBox(height: 6),
-              TextField(
-                controller: priceCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(hintText: '0'),
-              ),
-            ],
-          ),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 44),
-                      padding: EdgeInsets.zero,
+                    const SizedBox(height: 12),
+                    const Align(
+                      alignment: Alignment.centerRight,
+                      child:
+                          Text('السعر (ل.س)', style: TextStyle(fontSize: 13)),
                     ),
-                    child: const Text('إلغاء'),
-                  ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: priceCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(hintText: '0'),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final qty = double.tryParse(qtyCtrl.text.trim());
-                      final price = double.tryParse(priceCtrl.text.trim());
-                      if (productCtrl.text.trim().isEmpty ||
-                          qty == null ||
-                          price == null) {
-                        return;
-                      }
-                      final navigator = Navigator.of(ctx);
-                      final ok = await context
-                          .read<CatalogProvider>()
-                          .addOfficialPrice(
-                            productName: productCtrl.text.trim(),
-                            unit: unitCtrl.text.trim(),
-                            quantity: qty,
-                            price: price,
-                          );
-                      navigator.pop();
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(ok ? 'تمت الإضافة' : 'تعذّرت الإضافة'),
-                          backgroundColor:
-                              ok ? AppColors.success : AppColors.error,
+              ),
+              actions: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero,
                         ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(0, 44),
-                      padding: EdgeInsets.zero,
+                        child: const Text('إلغاء'),
+                      ),
                     ),
-                    child: const Text('إضافة'),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final qty = double.tryParse(qtyCtrl.text.trim());
+                          final price = double.tryParse(priceCtrl.text.trim());
+                          if (selectedProductId == null ||
+                              selectedUnitId == null ||
+                              qty == null ||
+                              price == null) {
+                            return;
+                          }
+                          final productName = products
+                              .firstWhere((p) => p.id == selectedProductId)
+                              .name;
+                          final unitName = units
+                              .firstWhere((u) => u.id == selectedUnitId)
+                              .name;
+                          final navigator = Navigator.of(ctx);
+                          final ok = await context
+                              .read<CatalogProvider>()
+                              .addOfficialPrice(
+                                productId: selectedProductId!,
+                                productName: productName,
+                                unitId: selectedUnitId!,
+                                unitName: unitName,
+                                amount: qty,
+                                price: price,
+                              );
+                          navigator.pop();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content:
+                                  Text(ok ? 'تمت الإضافة' : 'تعذّرت الإضافة'),
+                              backgroundColor:
+                                  ok ? AppColors.success : AppColors.error,
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero,
+                        ),
+                        child: const Text('إضافة'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
+              actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             ),
-          ],
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        ),
+          );
+        },
       ),
     );
   }
@@ -2621,10 +2732,12 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ANALYTICS SCREEN
-// ✅ الأرقام الثلاثة العلوية أصبحت من CatalogProvider.dashboardStats بدل
-// أرقام ثابتة. الرسوم البيانية أدناه تبقى توضيحية عمداً — لا يوجد أي
-// endpoint موثّق حالياً يعيد سلاسل بيانات زمنية (chart series)، وهذا موثّق
-// بوضوح في docs/API_ADDENDUM.md كنقطة مفتوحة لمطوّر الـ backend.
+// ✅ الأرقام الثلاثة العلوية من CatalogProvider.dashboardStats. الرسوم
+// البيانية أدناه تبقى توضيحية عمداً (بلا endpoint سلاسل بيانات زمنية حقيقي
+// بعد — موثّق في docs/API_ADDENDUM.md)، لكن أُعيد تصميمها بشكل احترافي:
+//   • رسم خطي: تعبئة متدرّجة، خطوط إرشادية، فقاعة القيمة الحالية، تسميات أيام.
+//   • رسم دائري (Donut): مركز يعرض النسبة الأكبر، Legend بنسب دقيقة.
+//   • رسم شريطي: قيمة واضحة فوق كل عمود، تدرّج لوني، خط أساس.
 // ══════════════════════════════════════════════════════════════════════════════
 class AdminAnalyticsScreen extends StatefulWidget {
   const AdminAnalyticsScreen({super.key});
@@ -2692,96 +2805,20 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
                 isPositive: true,
               ),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceOf(context),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.borderOf(context)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 14,
-                          color: AppColors.textHintOf(context),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'رسم توضيحي — بانتظار endpoint سلاسل بيانات زمنية',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.textSecondaryOf(context),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'نشاط الأسعار',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimaryOf(context),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _LineChartPlaceholder(),
-                  ],
-                ),
+              _AnalyticsCard(
+                title: 'نشاط الأسعار',
+                noteText: 'رسم توضيحي — بانتظار endpoint سلاسل بيانات زمنية',
+                child: const _LineChartPlaceholder(),
               ),
               const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceOf(context),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.borderOf(context)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'توزيع الفئات',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimaryOf(context),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _PieChartPlaceholder(),
-                  ],
-                ),
+              _AnalyticsCard(
+                title: 'توزيع الفئات',
+                child: const _PieChartPlaceholder(),
               ),
               const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceOf(context),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.borderOf(context)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'المنتجات الأكثر نشاطاً',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimaryOf(context),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _BarChartPlaceholder(),
-                  ],
-                ),
+              _AnalyticsCard(
+                title: 'المنتجات الأكثر نشاطاً',
+                child: const _BarChartPlaceholder(),
               ),
               const SizedBox(height: 20),
             ],
@@ -2792,181 +2829,406 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
   }
 }
 
-class _LineChartPlaceholder extends StatelessWidget {
+// ══════════════════════════════════════════════════════════════════════════
+// ✅ جديد — بطاقة موحّدة لكل رسم بياني (عنوان + ملاحظة اختيارية + محتوى)
+// بدل تكرار نفس شكل الـ Container/Column ثلاث مرات بشكل غير متسق.
+// ══════════════════════════════════════════════════════════════════════════
+class _AnalyticsCard extends StatelessWidget {
+  final String title;
+  final String? noteText;
+  final Widget child;
+  const _AnalyticsCard(
+      {required this.title, this.noteText, required this.child});
+
   @override
   Widget build(BuildContext context) {
-    final points = [300.0, 350.0, 400.0, 450.0, 460.0, 500.0, 700.0];
-    return SizedBox(
-      height: 160,
-      child: CustomPaint(painter: _LineChartPainter(points)),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceOf(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.borderOf(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(title,
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimaryOf(context))),
+              if (noteText != null)
+                Tooltip(
+                  message: noteText!,
+                  child: Icon(Icons.info_outline,
+                      size: 15, color: AppColors.textHintOf(context)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
     );
   }
 }
 
-class _LineChartPainter extends CustomPainter {
-  final List<double> points;
-  _LineChartPainter(this.points);
+// ══════════════════════════════════════════════════════════════════════════
+// LINE CHART — نشاط الأسعار
+// ══════════════════════════════════════════════════════════════════════════
+class _LineChartPlaceholder extends StatelessWidget {
+  const _LineChartPlaceholder();
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.primary
-      ..strokeWidth = 2.5
-      ..style = PaintingStyle.stroke;
+  static const _points = [300.0, 350.0, 400.0, 450.0, 460.0, 500.0, 700.0];
+  static const _dayLabels = [
+    'السبت',
+    'الأحد',
+    'الاثنين',
+    'الثلاثاء',
+    'الأربعاء',
+    'الخميس',
+    'اليوم'
+  ];
 
-    final dotPaint = Paint()
-      ..color = AppColors.primary
-      ..style = PaintingStyle.fill;
-
-    final path = Path();
-    const minY = 200.0, maxY = 800.0;
-
-    for (int i = 0; i < points.length; i++) {
-      final x = (i / (points.length - 1)) * size.width;
-      final y =
-          size.height - ((points[i] - minY) / (maxY - minY)) * size.height;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-      canvas.drawCircle(Offset(x, y), 4, dotPaint);
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
-}
-
-class _PieChartPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final isDark = AppColors.isDark(context);
+    final gridColor = AppColors.borderOf(context);
+    final textColor = AppColors.textSecondaryOf(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(width: 20),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // ✅ فقاعة القيمة الحالية أعلى الرسم بدل ترك النقطة الأخيرة بلا تفسير
+        Row(
           children: [
-            const _Legend('زيوت (35%)', AppColors.primary),
-            const SizedBox(height: 4),
-            const _Legend('سكريات (20%)', Colors.lightBlue),
-            const SizedBox(height: 4),
-            _Legend('أخرى', Colors.blue.shade200),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color:
+                    AppColors.primary.withValues(alpha: isDark ? 0.2 : 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.trending_up,
+                      size: 14, color: AppColors.primary),
+                  const SizedBox(width: 4),
+                  Text('${_points.last.toStringAsFixed(0)} اليوم',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary)),
+                ],
+              ),
+            ),
           ],
         ),
-        const SizedBox(width: 16),
+        const SizedBox(height: 12),
         SizedBox(
-          width: 120,
-          height: 120,
-          child: CustomPaint(painter: _PieChartPainter()),
+          height: 150,
+          child: CustomPaint(
+            painter: _LineChartPainter(
+              points: _points,
+              lineColor: AppColors.primary,
+              gridColor: gridColor,
+              isDark: isDark,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: _dayLabels
+              .map((d) =>
+                  Text(d, style: TextStyle(fontSize: 10, color: textColor)))
+              .toList(),
         ),
       ],
     );
   }
 }
 
-class _Legend extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _Legend(this.label, this.color);
+class _LineChartPainter extends CustomPainter {
+  final List<double> points;
+  final Color lineColor;
+  final Color gridColor;
+  final bool isDark;
+  _LineChartPainter({
+    required this.points,
+    required this.lineColor,
+    required this.gridColor,
+    required this.isDark,
+  });
+
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontSize: 12)),
+  void paint(Canvas canvas, Size size) {
+    final minY = points.reduce((a, b) => a < b ? a : b) * 0.85;
+    final maxY = points.reduce((a, b) => a > b ? a : b) * 1.1;
+
+    // ── خطوط إرشادية أفقية ─────────────────────────────────────────────
+    final gridPaint = Paint()
+      ..color = gridColor.withValues(alpha: isDark ? 0.5 : 0.7)
+      ..strokeWidth = 1;
+    for (int i = 0; i <= 3; i++) {
+      final y = size.height * i / 3;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // ── حساب نقاط الخط ────────────────────────────────────────────────
+    final offsets = <Offset>[];
+    for (int i = 0; i < points.length; i++) {
+      final x = (i / (points.length - 1)) * size.width;
+      final y =
+          size.height - ((points[i] - minY) / (maxY - minY)) * size.height;
+      offsets.add(Offset(x, y));
+    }
+
+    // ── تعبئة متدرّجة أسفل الخط ───────────────────────────────────────
+    final fillPath = Path()..moveTo(offsets.first.dx, size.height);
+    for (final o in offsets) {
+      fillPath.lineTo(o.dx, o.dy);
+    }
+    fillPath.lineTo(offsets.last.dx, size.height);
+    fillPath.close();
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          lineColor.withValues(alpha: isDark ? 0.35 : 0.22),
+          lineColor.withValues(alpha: 0),
         ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawPath(fillPath, fillPaint);
+
+    // ── الخط نفسه ─────────────────────────────────────────────────────
+    final linePaint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2.6
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final linePath = Path()..moveTo(offsets.first.dx, offsets.first.dy);
+    for (final o in offsets.skip(1)) {
+      linePath.lineTo(o.dx, o.dy);
+    }
+    canvas.drawPath(linePath, linePaint);
+
+    // ── النقاط (النقطة الأخيرة مُبرزة) ───────────────────────────────
+    for (int i = 0; i < offsets.length; i++) {
+      final isLast = i == offsets.length - 1;
+      canvas.drawCircle(offsets[i], isLast ? 5.5 : 3,
+          Paint()..color = Colors.white);
+      canvas.drawCircle(
+        offsets[i],
+        isLast ? 5.5 : 3,
+        Paint()
+          ..color = lineColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = isLast ? 3 : 2,
       );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LineChartPainter oldDelegate) =>
+      oldDelegate.lineColor != lineColor || oldDelegate.isDark != isDark;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// PIE / DONUT CHART — توزيع الفئات
+// ══════════════════════════════════════════════════════════════════════════
+class _PieChartPlaceholder extends StatelessWidget {
+  const _PieChartPlaceholder();
+
+  static const _slices = [
+    (0.35, 'زيوت', AppColors.primary),
+    (0.20, 'سكريات', Colors.lightBlue),
+    (0.20, 'حبوب', Colors.blue),
+    (0.25, 'أخرى', AppColors.primaryLight),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = AppColors.textPrimaryOf(context);
+    final textSecondary = AppColors.textSecondaryOf(context);
+    final cardColor = AppColors.surfaceOf(context);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 130,
+          height: 130,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CustomPaint(
+                size: const Size(130, 130),
+                painter: _PieChartPainter(_slices, centerColor: cardColor),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${(_slices.first.$1 * 100).toStringAsFixed(0)}%',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: textColor)),
+                  Text(_slices.first.$2,
+                      style: TextStyle(fontSize: 10.5, color: textSecondary)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 20),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: _slices
+                .map((s) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                                color: s.$3, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(s.$2,
+                                style:
+                                    TextStyle(fontSize: 12.5, color: textColor)),
+                          ),
+                          Text('${(s.$1 * 100).toStringAsFixed(0)}%',
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: textColor)),
+                        ],
+                      ),
+                    ))
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _PieChartPainter extends CustomPainter {
+  final List<(double, String, Color)> slices;
+  final Color centerColor;
+  _PieChartPainter(this.slices, {required this.centerColor});
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
-    final slices = [
-      (0.35, AppColors.primary),
-      (0.20, Colors.lightBlue),
-      (0.20, Colors.blue.shade200),
-      (0.25, AppColors.primaryLight),
-    ];
     double start = -3.14159 / 2;
     for (final slice in slices) {
       final sweep = slice.$1 * 2 * 3.14159;
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
         start,
-        sweep,
+        sweep - 0.04, // فجوة بصرية صغيرة بين كل قطاع والآخر
         true,
         Paint()
-          ..color = slice.$2
+          ..color = slice.$3
           ..style = PaintingStyle.fill,
       );
       start += sweep;
     }
-    canvas.drawCircle(
-      center,
-      radius * 0.5,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.fill,
-    );
+    // ✅ ثقب الدونات بلون البطاقة (لا أبيض ثابت) ليتوافق مع الوضع الداكن
+    canvas.drawCircle(center, radius * 0.58, Paint()..color = centerColor);
   }
 
   @override
-  bool shouldRepaint(_) => false;
+  bool shouldRepaint(covariant _PieChartPainter oldDelegate) =>
+      oldDelegate.centerColor != centerColor;
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// BAR CHART — المنتجات الأكثر نشاطاً
+// ══════════════════════════════════════════════════════════════════════════
 class _BarChartPlaceholder extends StatelessWidget {
+  const _BarChartPlaceholder();
+
+  static const _bars = [
+    ('رز أبيض', 156),
+    ('زيت ذرة', 130),
+    ('طحين', 105),
+    ('سكر', 95),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final bars = [
-      ('رز أبيض', 156),
-      ('زيت ذرة', 130),
-      ('طحين', 105),
-      ('سكر', 95),
-    ];
-    final maxVal = bars.map((b) => b.$2).reduce((a, b) => a > b ? a : b);
+    final maxVal = _bars.map((b) => b.$2).reduce((a, b) => a > b ? a : b);
+    final textColor = AppColors.textSecondaryOf(context);
+    final gridColor = AppColors.borderOf(context);
 
     return Column(
       children: [
         SizedBox(
           height: 140,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: bars
-                .map(
-                  (b) => Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 120 * b.$2 / maxVal,
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.only(
-                            topLeft: Radius.circular(6),
-                            topRight: Radius.circular(6),
-                          ),
-                        ),
+            children: _bars.map((b) {
+              final barHeight = 108 * b.$2 / maxVal;
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${b.$2}',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimaryOf(context))),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: 36,
+                    height: barHeight,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          AppColors.primary,
+                          AppColors.primary.withValues(alpha: 0.65),
+                        ],
                       ),
-                    ],
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(8),
+                        topRight: Radius.circular(8),
+                      ),
+                    ),
                   ),
-                )
-                .toList(),
+                ],
+              );
+            }).toList(),
           ),
         ),
+        Container(height: 1, color: gridColor),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: bars
-              .map((b) => Text(b.$1, style: const TextStyle(fontSize: 11)))
+          children: _bars
+              .map((b) => SizedBox(
+                    width: 60,
+                    child: Text(b.$1,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11, color: textColor)),
+                  ))
               .toList(),
         ),
       ],
@@ -2977,6 +3239,9 @@ class _BarChartPlaceholder extends StatelessWidget {
 // ══════════════════════════════════════════════════════════════════════════════
 // SETTINGS SCREEN
 // (بلا تغيير جوهري — تعتمد على AppProvider فقط وهو مربوط بالكامل بالفعل)
+// ✅ ملاحظة: هذه الشاشة تحديداً لا تُظهر زر تبديل الثيم في شريط العنوان
+// العلوي المشترك في AdminShell (راجع _AdminShellState.build أعلاه)، لأنها
+// تحتوي أصلاً بطاقة "الوضع الليلي" الخاصة بها أدناه.
 // ══════════════════════════════════════════════════════════════════════════════
 class AdminSettingsScreen extends StatefulWidget {
   const AdminSettingsScreen({super.key});
@@ -3060,8 +3325,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: const Text('حسناً',
-                    style: TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               ),
             ),
           ],

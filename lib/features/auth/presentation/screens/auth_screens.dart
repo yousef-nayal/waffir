@@ -288,7 +288,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             : null,
                       ),
                       Align(
-                        alignment: Alignment.centerLeft,
+                        alignment: Alignment.centerRight,
                         child: TextButton(
                           onPressed: _showForgotPassword,
                           child: const Text('نسيت كلمة المرور؟'),
@@ -335,6 +335,13 @@ class _LoginScreenState extends State<LoginScreen> {
 //   1) "الكتلة الإدارية" — إحدى الكتل الخمس الرسمية (aleppo_blocks.dart)
 //   2) "الحي" — يُبنى تلقائياً حسب الكتلة المختارة فقط (cascading dropdown)،
 //      ويُعاد ضبطه تلقائياً كلما تغيّرت الكتلة لمنع اختيار حي لا ينتمي إليها.
+//
+// ✅ إصلاح إضافي جوهري (بلا أي تغيير مرئي): جدول User في قاعدة البيانات
+// الفعلية يتطلب location_id (مفتاح أجنبي حقيقي)، لا نص "قطاع" حراً. الآن
+// تُحمَّل قائمة المواقع الفعلية من الخادم عند فتح الشاشة (GET /locations)،
+// ويُترجَم اختيار (الكتلة، الحي) إلى location_id حقيقي قبل الإرسال عبر
+// CatalogProvider.locationIdForArea — الحقول والقوائم المرئية نفسها بلا
+// أي تغيير في شكلها أو ترتيبها.
 // ══════════════════════════════════════════════════════════════════════════
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -357,12 +364,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
   late String _selectedBlock = AleppoBlocks.all.first.name;
   late String _selectedArea = AleppoBlocks.all.first.areas.first;
 
+  @override
+  void initState() {
+    super.initState();
+    // ✅ جديد — تحميل قائمة المواقع الحقيقية من الخادم (GET /locations)
+    // فور فتح شاشة التسجيل، حتى تكون جاهزة لترجمة الحي المختار إلى
+    // location_id فعلي عند الضغط على "إنشاء حساب" لاحقاً، بدل انتظار
+    // الإرسال ثم اكتشاف عدم توفر البيانات.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final catalogProvider = context.read<CatalogProvider>();
+      if (catalogProvider.locations.isEmpty) {
+        catalogProvider.loadLocations();
+      }
+    });
+  }
+
   void _onBlockChanged(String? block) {
     if (block == null || block == _selectedBlock) return;
     setState(() {
       _selectedBlock = block;
-      // ✅ إعادة ضبط الحي تلقائياً على أول حي في الكتلة الجديدة، لمنع بقاء
-      // حي من الكتلة السابقة لا ينتمي إلى الكتلة المختارة حديثاً.
+      // ✅ إعادة ضبط المنطقة تلقائياً على أول منطقة في الكتلة الجديدة، لمنع بقاء
+      // منطقة من الكتلة السابقة لا تنتمي إلى الكتلة المختارة حديثاً.
       _selectedArea = AleppoBlocks.areasOfBlock(block).first;
     });
   }
@@ -379,6 +401,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final provider = context.read<AppProvider>();
+    // ✅ جديد — ترجمة الحي المختار إلى location_id حقيقي قبل الإرسال. في
+    // وضع العرض التجريبي (AppConfig.useMockData) هذه القيمة تُتجاهَل تماماً
+    // داخل AppProvider.register، فلا تأثير لها على تجربة العرض التجريبي.
+    final locationId =
+        context.read<CatalogProvider>().locationIdForArea(_selectedArea);
     setState(() => _isLoading = true);
     final phone = _phoneController.text.trim();
     final success = await provider.register(
@@ -387,6 +414,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       password: _passwordController.text,
       block: _selectedBlock,
       area: _selectedArea,
+      locationId: locationId,
     );
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -465,7 +493,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           height: 1.3,
                         ),
                         decoration: _fieldDecoration(context,
-                            label: 'الكتلة الإدارية', icon: Icons.map_outlined),
+                            label: 'الكتلة', icon: Icons.map_outlined),
                         items: AleppoBlocks.blockNames
                             .map((b) => DropdownMenuItem(
                                   value: b,
@@ -476,7 +504,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         onChanged: _onBlockChanged,
                       ),
                       const SizedBox(height: 14),
-                      // ✅ 2) الحي — قائمته تتغيّر تلقائياً حسب الكتلة أعلاه.
+                      // ✅ 2) المنطقة — قائمته تتغيّر تلقائياً حسب الكتلة أعلاه.
                       // مفتاح فريد يتضمن الكتلة المختارة يجبر Flutter على
                       // إعادة بناء الحقل عند تغيّر الكتلة بدل الاحتفاظ بحالة
                       // داخلية قديمة لا تتوافق مع القائمة الجديدة.
@@ -493,7 +521,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           height: 1.3,
                         ),
                         decoration: _fieldDecoration(context,
-                            label: 'الحي', icon: Icons.location_on_outlined),
+                            label: 'المنطقة', icon: Icons.location_on_outlined),
                         items: areasOfSelectedBlock
                             .map((a) => DropdownMenuItem(
                                   value: a,

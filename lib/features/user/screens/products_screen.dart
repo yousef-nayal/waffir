@@ -79,9 +79,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               color: Colors.white,
                               fontSize: 22,
                               fontWeight: FontWeight.w700)),
-                      // ✅ زر الثيم على اليمين (بدل أعلى يسار الشاشة سابقاً)
+                      // ✅ زر الثيم على اليسار بشكل موحد في جميع الواجهات
                       Align(
-                        alignment: Alignment.centerRight,
+                        alignment: Alignment.centerLeft,
                         child: GestureDetector(
                           onTap: provider.toggleDarkMode,
                           child: Container(
@@ -271,26 +271,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _reportEntry(PriceEntry entry) async {
-    final type = await showDialog<String>(
+    final reason = await showDialog<_ReportReason>(
       context: context,
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: SimpleDialog(
-          title: const Text('الإبلاغ عن هذا السعر'),
-          children: const [
-            _ReportTypeOption(value: 'wrong_price', label: 'سعر غير صحيح'),
-            _ReportTypeOption(value: 'outdated', label: 'سعر قديم'),
-            _ReportTypeOption(value: 'duplicate', label: 'تكرار'),
-            _ReportTypeOption(value: 'other', label: 'أخرى'),
-          ],
-        ),
-      ),
+      builder: (ctx) => const _ReportDialog(),
     );
-    if (type == null || !mounted) return;
+    if (reason == null || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    // ══════════════════════════════════════════════════════════════════
+    // ✅ جديد — reason.note يحمل النص الذي كتبه المستخدم (إجباري فقط عند
+    // اختيار "أخرى"، اختياري لبقية الأسباب). يُرسَل الآن تحت مفتاح
+    // description الفعلي عبر ReportService (راجع report_service.dart).
+    // ══════════════════════════════════════════════════════════════════
     final ok = await context
         .read<ReportProvider>()
-        .submitReport(priceEntryId: entry.id, type: type);
+        .submitReport(priceEntryId: entry.id, type: reason.type, note: reason.note);
     if (!mounted) return;
     messenger.showSnackBar(SnackBar(
         content: Text(ok ? 'شكراً، تم إرسال بلاغك' : 'تعذّر إرسال البلاغ'),
@@ -526,7 +520,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 const SizedBox(height: 8),
                 Text('تعذّر عرض الأسعار المسجّلة',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondaryOf(context))),
+                    style:
+                        TextStyle(color: AppColors.textSecondaryOf(context))),
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: () => context
@@ -544,15 +539,329 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 }
 
-class _ReportTypeOption extends StatelessWidget {
+// ══════════════════════════════════════════════════════════════════════════
+// نافذة "الإبلاغ عن هذا السعر" — تصميم احترافي جديد
+// ✅ استُبدلت SimpleDialog البسيطة (قائمة نصية بلا أي شكل) بنافذة مصممة
+// بعناية: أيقونة رأسية، بطاقات أسباب قابلة للاختيار (بدل نص عادي)، وحقل
+// كتابة يظهر بانتقال متحرك (AnimatedSwitcher) فور اختيار "أخرى" ويصبح
+// إجبارياً — لا يمكن إرسال البلاغ دون تعبئته في هذه الحالة تحديداً، مع
+// رسالة خطأ واضحة تحت الحقل بدل رفض صامت. زرا "إلغاء"/"إرسال البلاغ"
+// بعرض متساوٍ أسفل النافذة، وزر الإرسال مُعطَّل حتى يُختار سبب واحد على
+// الأقل.
+// ══════════════════════════════════════════════════════════════════════════
+
+/// ✅ جديد — نتيجة النافذة: نوع البلاغ + نص توضيحي اختياري (إجباري فقط
+/// عند type == 'other').
+class _ReportReason {
+  final String type;
+  final String? note;
+  const _ReportReason(this.type, this.note);
+}
+
+class _ReportOptionData {
   final String value;
   final String label;
-  const _ReportTypeOption({required this.value, required this.label});
+  final IconData icon;
+  const _ReportOptionData(this.value, this.label, this.icon);
+}
+
+const List<_ReportOptionData> _reportOptions = [
+  _ReportOptionData('wrong_price', 'سعر غير صحيح', Icons.price_change_outlined),
+  _ReportOptionData('outdated', 'سعر قديم', Icons.history_toggle_off),
+  _ReportOptionData('duplicate', 'تكرار', Icons.copy_all_outlined),
+  _ReportOptionData('other', 'أخرى', Icons.more_horiz_outlined),
+];
+
+class _ReportDialog extends StatefulWidget {
+  const _ReportDialog();
+
   @override
-  Widget build(BuildContext context) => SimpleDialogOption(
-        onPressed: () => Navigator.pop(context, value),
-        child: Text(label),
-      );
+  State<_ReportDialog> createState() => _ReportDialogState();
+}
+
+class _ReportDialogState extends State<_ReportDialog> {
+  String? _selectedType;
+  final _noteCtrl = TextEditingController();
+  String? _noteError;
+
+  bool get _isOther => _selectedType == 'other';
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  void _selectType(String value) {
+    setState(() {
+      _selectedType = value;
+      // ✅ إخفاء رسالة الخطأ فور تغيير الاختيار (سواء إلى "أخرى" أو خارجها)
+      _noteError = null;
+    });
+  }
+
+  void _submit() {
+    if (_selectedType == null) return;
+    if (_isOther && _noteCtrl.text.trim().isEmpty) {
+      setState(() => _noteError = 'يرجى كتابة توضيح لسبب البلاغ');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _ReportReason(
+        _selectedType!,
+        _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Dialog(
+        backgroundColor: AppColors.surfaceOf(context),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        // ══════════════════════════════════════════════════════════════
+        // ✅ إصلاح "BOTTOM OVERFLOWED" — كان محتوى النافذة (Column بحجمه
+        // الطبيعي الكامل) يفيض عن الشاشة فور ظهور لوحة المفاتيح لحقل
+        // الملاحظة (خاصة عند اختيار "أخرى" مع autofocus)، لأن Dialog
+        // العادي لا "يقصّ" محتواه تلقائياً بل يتركه يفيض بصمت مع الشريط
+        // الأصفر/الأسود المميز لهذا الخطأ في Flutter. الحل: تحديد سقف
+        // ارتفاع صريح للنافذة (85% من ارتفاع الشاشة، مطروحاً منه جزء من
+        // ارتفاع لوحة المفاتيح الحالي إن وُجدت) عبر ConstrainedBox، مع
+        // تغليف المحتوى بـ SingleChildScrollView ليصبح قابلاً للتمرير بدل
+        // الفيض عندما لا يتسع المحتوى كاملاً.
+        // ══════════════════════════════════════════════════════════════
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85 -
+                MediaQuery.of(context).viewInsets.bottom * 0.3,
+          ),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.flag_rounded,
+                          color: AppColors.error, size: 26),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text('الإبلاغ عن هذا السعر',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimaryOf(context))),
+                  const SizedBox(height: 6),
+                  Text('اختر السبب الأنسب لمساعدتنا على تحسين دقة الأسعار',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.5,
+                          color: AppColors.textSecondaryOf(context))),
+                  const SizedBox(height: 20),
+                  ..._reportOptions.map((o) => _ReasonTile(
+                        icon: o.icon,
+                        label: o.label,
+                        selected: _selectedType == o.value,
+                        onTap: () => _selectType(o.value),
+                      )),
+                  // ══════════════════════════════════════════════════════════
+                  // ✅ حقل الكتابة — يظهر وينهار بانتقال متحرك سلس بدل الظهور
+                  // المفاجئ، ويكون إجبارياً حصراً عند اختيار "أخرى".
+                  // ══════════════════════════════════════════════════════════
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    child: !_isOther
+                        ? const SizedBox(width: double.infinity)
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: _noteCtrl,
+                                  maxLines: 3,
+                                  minLines: 2,
+                                  maxLength: 300,
+                                  textDirection: TextDirection.rtl,
+                                  autofocus: true,
+                                  onChanged: (v) {
+                                    if (_noteError != null &&
+                                        v.trim().isNotEmpty) {
+                                      setState(() => _noteError = null);
+                                    }
+                                  },
+                                  style: TextStyle(
+                                      fontSize: 13.5,
+                                      color: AppColors.textPrimaryOf(context)),
+                                  decoration: InputDecoration(
+                                    hintText: 'اكتب توضيحاً لسبب البلاغ...',
+                                    hintStyle: TextStyle(
+                                        color: AppColors.textHintOf(context),
+                                        fontSize: 13),
+                                    errorText: _noteError,
+                                    counterText: '',
+                                    filled: true,
+                                    fillColor: AppColors.isDark(context)
+                                        ? Colors.white.withValues(alpha: 0.04)
+                                        : AppColors.primary
+                                            .withValues(alpha: 0.03),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 12),
+                                    border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color:
+                                                AppColors.borderOf(context))),
+                                    enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: _noteError != null
+                                                ? AppColors.error
+                                                : AppColors.borderOf(context))),
+                                    focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: _noteError != null
+                                                ? AppColors.error
+                                                : AppColors.primary,
+                                            width: 2)),
+                                    errorBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                            color: AppColors.error)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 46),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('إلغاء'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _selectedType == null ? null : _submit,
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(0, 46),
+                            backgroundColor: AppColors.error,
+                            disabledBackgroundColor:
+                                AppColors.error.withValues(alpha: 0.35),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text('إرسال البلاغ',
+                              style: TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ✅ جديد — بطاقة سبب بلاغ قابلة للاختيار (بدل SimpleDialogOption النصية
+/// السابقة): أيقونة + تسمية + مؤشر اختيار دائري، وتُبرَز حدودها وخلفيتها
+/// عند التحديد.
+class _ReasonTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ReasonTile({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary.withValues(alpha: 0.08)
+              : AppColors.isDark(context)
+                  ? Colors.white.withValues(alpha: 0.03)
+                  : Colors.black.withValues(alpha: 0.015),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.borderOf(context),
+            width: selected ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon,
+                size: 20,
+                color: selected
+                    ? AppColors.primary
+                    : AppColors.textHintOf(context)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.textPrimaryOf(context))),
+            ),
+            Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 20,
+              color:
+                  selected ? AppColors.primary : AppColors.textHintOf(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _PriceStat extends StatelessWidget {
@@ -841,59 +1150,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
     );
   }
 
-  void _showEditProfile(AppProvider provider) {
-    final nameCtrl = TextEditingController(text: provider.userName);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: Directionality(
-          textDirection: TextDirection.rtl,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('تعديل الملف الشخصي',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 16),
-                TextField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                        labelText: 'الاسم الكامل',
-                        prefixIcon: Icon(Icons.person_outline))),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () async {
-                    final navigator = Navigator.of(ctx);
-                    final messenger = ScaffoldMessenger.of(context);
-                    if (nameCtrl.text.trim().isEmpty) return;
-                    final ok = await provider.updateProfile(
-                        name: nameCtrl.text.trim());
-                    navigator.pop();
-                    messenger.showSnackBar(SnackBar(
-                        content: Text(ok
-                            ? 'تم تحديث الملف الشخصي'
-                            : 'تعذّر التحديث، حاول مجدداً'),
-                        backgroundColor:
-                            ok ? AppColors.success : AppColors.error));
-                  },
-                  child: const Text('حفظ'),
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   /// ✅ محدَّث — يستخدم الآن منتقي الكتل/الأحياء الموحّد بدل قائمة محلية
   void _showLocationPicker(AppProvider provider) {
     showLocationPickerSheet(
@@ -931,6 +1187,171 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ جديد — "المساعدة والدعم"، أحد عناصر شاشة الإعدادات في مخطط حالات
+  // الاستخدام والتي لم تكن موجودة سابقاً. نافذة معلوماتية بسيطة بنفس نمط
+  // بقية الحوارات في التطبيق (showComingSoonDialog/showConfirmDialog)، تعرض
+  // قناة تواصل واحدة واضحة بدل ترك الزر بلا استجابة.
+  // ══════════════════════════════════════════════════════════════════════
+  void _showHelpSupport() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: const EdgeInsets.all(24),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle),
+                child: const Icon(Icons.support_agent_outlined,
+                    color: AppColors.primary, size: 28),
+              ),
+              const SizedBox(height: 16),
+              Text('المساعدة والدعم',
+                  style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimaryOf(ctx)),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(
+                  'لأي استفسار أو مشكلة تواجهك أثناء استخدام التطبيق، تواصل '
+                  'معنا عبر البريد التالي وسيقوم فريق الدعم بالرد عليك في '
+                  'أقرب وقت ممكن.',
+                  style: TextStyle(
+                      color: AppColors.textSecondaryOf(ctx),
+                      fontSize: 13.5,
+                      height: 1.6),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.mail_outline,
+                      color: AppColors.primary, size: 16),
+                  const SizedBox(width: 8),
+                  const Text('support@waffir.sy',
+                      textDirection: TextDirection.ltr,
+                      style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600)),
+                ]),
+              ),
+              const SizedBox(height: 20),
+              // ✅ إصلاح: كانت SizedBox تفرض ارتفاعاً ثابتاً (46) أقل مما
+              // يحتاجه الزر فعلياً (حشوة الثيم الرأسية 16 من كل جهة + ارتفاع
+              // سطر النص)، فيُقصّ النص عمودياً ويظهر مشوَّهاً بدل "حسناً"
+              // كاملة. الحل: عدم فرض ارتفاع ثابت — نترك الزر يأخذ ارتفاعه
+              // الطبيعي عبر minimumSize فقط، بعرض كامل.
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14))),
+                  child: const Text('حسناً',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ جديد — "عن التطبيق"، عنصر آخر من مخطط حالات الاستخدام كان مفقوداً.
+  // نافذة تعريفية بسيطة بشعار التطبيق ونبذة قصيرة عن هدفه.
+  // ══════════════════════════════════════════════════════════════════════
+  void _showAboutApp() {
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: const EdgeInsets.all(24),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ✅ استبدال إيموجي "💰" بالشعار الفعلي للتطبيق (icon.png)
+              // بدل نص إيموجي عام لا يمثّل هوية التطبيق البصرية الحقيقية.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.borderOf(ctx)),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Image.asset(
+                    'assets/icon/icon.png',
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text('وفّر',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimaryOf(ctx))),
+              const SizedBox(height: 4),
+              Text('الإصدار 1.0.0',
+                  style: TextStyle(
+                      color: AppColors.textSecondaryOf(ctx), fontSize: 12.5)),
+              const SizedBox(height: 14),
+              Text(
+                  'تطبيق "وفّر" يساعدك على معرفة الأسعار الحقيقية للمنتجات '
+                  'في المتاجر ومقارنتها بالأسعار الرسمية، لزيادة الشفافية '
+                  'ومساعدتك على اتخاذ قرارات شراء أفضل.',
+                  style: TextStyle(
+                      color: AppColors.textSecondaryOf(ctx),
+                      fontSize: 13.5,
+                      height: 1.6),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              // ✅ نفس إصلاح ارتفاع الزر أعلاه — بلا ارتفاع ثابت مفروض.
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14))),
+                  child: const Text('حسناً',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
@@ -949,17 +1370,51 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
             onPressed: () => Navigator.pop(context),
           ),
         ),
+        // ══════════════════════════════════════════════════════════════
+        // ✅ إعادة ترتيب شاملة لتطابق تماماً مخطط حالات الاستخدام (فرع
+        // "الإعدادات" المنبثق من "الحساب والإعدادات"): تغيير الثيم، تغيير
+        // اللغة، الإشعارات، تغيير كلمة المرور، تغيير الموقع، المساعدة
+        // والدعم، عن التطبيق، سياسة الخصوصية، الشروط والأحكام — بنفس هذا
+        // الترتيب تماماً. "تعديل الملف الشخصي" أُزيل من هنا لأنه في المخطط
+        // include مباشر من "الملف الشخصي" وليس من "الإعدادات" (متاح فعلاً
+        // من شاشة الملف الشخصي مباشرة). كما أُضيفت العناصر الثلاثة التي لم
+        // تكن موجودة إطلاقاً: تغيير الثيم، المساعدة والدعم، عن التطبيق،
+        // بالإضافة إلى رابط الشروط والأحكام المفقود سابقاً من هذه الشاشة.
+        // ══════════════════════════════════════════════════════════════
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _SectionHeader('التفضيلات', color: sectionColor),
+            _SectionHeader('المظهر والتفضيلات', color: sectionColor),
+            // ✅ جديد — تغيير الثيم (فاتح/داكن) كأول عنصر في المخطط
+            _SettingCard(
+              isDark: isDark,
+              child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(children: [
+                      Text('تغيير الثيم',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500, color: textPrimary)),
+                      const SizedBox(width: 8),
+                      Icon(
+                          isDark
+                              ? Icons.dark_mode_outlined
+                              : Icons.light_mode_outlined,
+                          size: 18,
+                          color: AppColors.primary),
+                    ]),
+                    Switch(
+                        value: isDark,
+                        onChanged: (_) => provider.toggleDarkMode(),
+                        activeThumbColor: AppColors.primary),
+                  ]),
+            ),
             _SettingCard(
               isDark: isDark,
               onTap: _showLanguageInfo,
               child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // ✅ التسمية + الأيقونة أولاً → تظهر يمين
                     Row(children: [
                       Text('اللغة',
                           style: TextStyle(
@@ -967,7 +1422,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                       const SizedBox(width: 8),
                       const Text('🌍', style: TextStyle(fontSize: 18)),
                     ]),
-                    // ✅ القيمة الحالية أخيراً → تظهر يسار
                     Text('العربية',
                         style: TextStyle(color: textSecondary, fontSize: 14)),
                   ]),
@@ -977,7 +1431,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
               child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // ✅ التسمية + الأيقونة أولاً → تظهر يمين
                     Row(children: [
                       Text('الإشعارات',
                           style: TextStyle(
@@ -985,7 +1438,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                       const SizedBox(width: 8),
                       const Text('🔔', style: TextStyle(fontSize: 18)),
                     ]),
-                    // ✅ مفتاح التبديل أخيراً → يظهر يسار
                     Switch(
                         value: _notifications,
                         onChanged: _setNotifications,
@@ -993,26 +1445,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                   ]),
             ),
 
-            _SectionHeader('الخصوصية والأمان', color: sectionColor),
-            _SettingCard(
-              isDark: isDark,
-              onTap: () =>
-                  Navigator.pushNamed(context, AppRoutes.privacyPolicy),
-              child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(children: [
-                      Text('الخصوصية',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w500, color: textPrimary)),
-                      const SizedBox(width: 8),
-                      const Text('🔒', style: TextStyle(fontSize: 18)),
-                    ]),
-                    Icon(Icons.arrow_back_ios,
-                        size: 14,
-                        color: isDark ? Colors.white30 : AppColors.textHint),
-                  ]),
-            ),
+            _SectionHeader('الأمان والموقع', color: sectionColor),
             _SettingCard(
               isDark: isDark,
               onTap: () => _startChangePassword(provider),
@@ -1031,30 +1464,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                         color: isDark ? Colors.white30 : AppColors.textHint),
                   ]),
             ),
-
-            _SectionHeader('الحساب', color: sectionColor),
-            _SettingCard(
-              isDark: isDark,
-              onTap: () => _showEditProfile(provider),
-              child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(children: [
-                      Text('تعديل الملف الشخصي',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w500, color: textPrimary)),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.person_outline,
-                          size: 18, color: AppColors.primary),
-                    ]),
-                    Icon(Icons.arrow_back_ios,
-                        size: 14,
-                        color: isDark ? Colors.white30 : AppColors.textHint),
-                  ]),
-            ),
-            // ✅ الصف يعرض الآن المنطقة الحالية كقيمة ثانوية في أقصى اليسار،
-            // والتسمية+الأيقونة في أقصى اليمين، ويفتح منتقي الكتل/الأحياء
-            // الرسمي عند النقر.
             _SettingCard(
               isDark: isDark,
               onTap: () => _showLocationPicker(provider),
@@ -1071,6 +1480,89 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                     ]),
                     Text(provider.userLocation,
                         style: TextStyle(color: textSecondary, fontSize: 14)),
+                  ]),
+            ),
+
+            _SectionHeader('الدعم والتطبيق', color: sectionColor),
+            // ✅ جديد — المساعدة والدعم
+            _SettingCard(
+              isDark: isDark,
+              onTap: _showHelpSupport,
+              child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(children: [
+                      Text('المساعدة والدعم',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500, color: textPrimary)),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.support_agent_outlined,
+                          size: 18, color: AppColors.primary),
+                    ]),
+                    Icon(Icons.arrow_back_ios,
+                        size: 14,
+                        color: isDark ? Colors.white30 : AppColors.textHint),
+                  ]),
+            ),
+            // ✅ جديد — عن التطبيق
+            _SettingCard(
+              isDark: isDark,
+              onTap: _showAboutApp,
+              child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(children: [
+                      Text('عن التطبيق',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500, color: textPrimary)),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.info_outline,
+                          size: 18, color: AppColors.primary),
+                    ]),
+                    Icon(Icons.arrow_back_ios,
+                        size: 14,
+                        color: isDark ? Colors.white30 : AppColors.textHint),
+                  ]),
+            ),
+            _SettingCard(
+              isDark: isDark,
+              onTap: () =>
+                  Navigator.pushNamed(context, AppRoutes.privacyPolicy),
+              child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(children: [
+                      Text('سياسة الخصوصية',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500, color: textPrimary)),
+                      const SizedBox(width: 8),
+                      const Text('🔒', style: TextStyle(fontSize: 18)),
+                    ]),
+                    Icon(Icons.arrow_back_ios,
+                        size: 14,
+                        color: isDark ? Colors.white30 : AppColors.textHint),
+                  ]),
+            ),
+            // ✅ جديد — رابط الشروط والأحكام لم يكن موجوداً في هذه الشاشة
+            // إطلاقاً رغم وجود المسار (AppRoutes.termsOfService) جاهزاً.
+            _SettingCard(
+              isDark: isDark,
+              onTap: () =>
+                  Navigator.pushNamed(context, AppRoutes.termsOfService),
+              child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(children: [
+                      Text('الشروط والأحكام',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w500, color: textPrimary)),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.description_outlined,
+                          size: 18, color: AppColors.primary),
+                    ]),
+                    Icon(Icons.arrow_back_ios,
+                        size: 14,
+                        color: isDark ? Colors.white30 : AppColors.textHint),
                   ]),
             ),
 
@@ -1138,6 +1630,14 @@ class _SettingCard extends StatelessWidget {
 // Future.delayed وهمي حتى في وضع الإنتاج. الآن تُحمَّل قوائم المنتجات
 // والمتاجر الحقيقية عبر ProductProvider/StoreProvider، ويحتفظ الاختيار
 // بالـ id الفعلي، والإرسال يمرّ فعلياً عبر PriceProvider.submitPrice.
+//
+// ✅ إصلاح جوهري إضافي (بلا أي تغيير مرئي في شكل الشاشة): حقلا "الوحدة"
+// و"العلامة التجارية" كانا يعتمدان على قائمة وحدات ثابتة (كغ/غرام/...)
+// وMockData.brands على التوالي — نصوص لا معرّفات حقيقية، رغم أن مخطط
+// قاعدة البيانات الفعلي يتطلب unit_id/brand_id (مفتاحان أجنبيان). الآن
+// يُختاران من CatalogProvider.units/brands (مُحمَّلين من الخادم)، بنفس
+// شكل وسلوك القائمتين المنسدلتين تماماً (_IdDropdown نفسها المستخدمة أصلاً
+// لحقلَي المنتج والمحل)، مع الاحتفاظ بمعرّف حقيقي (id) بدل نص فقط.
 // ══════════════════════════════════════════════════════════════════════════════
 class AddPriceScreen extends StatefulWidget {
   const AddPriceScreen({super.key});
@@ -1146,36 +1646,70 @@ class AddPriceScreen extends StatefulWidget {
 }
 
 class _AddPriceScreenState extends State<AddPriceScreen> {
-  // ✅ جديد — لا قيمة اختيارية بعد الآن لعلامة تجارية: المستخدم يجب أن يختار
-  // إما علامة حقيقية أو هذا الخيار الصريح "بدون علامة تجارية"، بدل ترك الحقل
-  // فارغاً بصمت كما كان سابقاً.
-  static const String _noBrandOption = 'بدون علامة تجارية';
+  // ✅ نستخدم معرّفاً فارغاً '' كقيمة اصطلاحية داخل قائمة العلامات التجارية
+  // تعني "بدون علامة تجارية"، بدل الاعتماد على مطابقة نص اسم كما كان
+  // سابقاً. هذا المعرّف لا يُرسَل للـ backend أبداً (راجع _submit أدناه:
+  // يُترجَم إلى null قبل الإرسال).
+  static const String _noBrandOption = '';
 
-  // ✅ جديد — الكتلة الإدارية يجب اختيارها أولاً قبل إتاحة اختيار المحل،
-  // وقائمة المحلات المعروضة تُفلتَر تلقائياً لتشمل فقط محلات تلك الكتلة
-  // (عبر AleppoBlocks.blockOfArea المطبَّق على حقل area الموجود أصلاً في
-  // StoreModel — بلا حاجة لأي تعديل على الـ backend أو الـ model).
+  // ✅ محدَّث — سلسلة اختيار من 3 مستويات: الكتلة الإدارية أولاً، ثم
+  // المنطقة/الحي التابع لتلك الكتلة (عبر AleppoBlocks.areasOfBlock)، ثم
+  // المحل أخيراً — تُفلتَر قائمة المحلات المعروضة تلقائياً لتشمل فقط
+  // محلات المنطقة المختارة تحديداً (مطابقة مباشرة على حقل area الموجود
+  // أصلاً في StoreModel — بلا حاجة لأي تعديل على الـ backend أو الـ model).
   String? _selectedBlock;
+  String? _selectedArea;
   String? _selectedProductId;
   String? _selectedStoreId;
   final _priceCtrl = TextEditingController(text: '15000');
   final _qtyCtrl = TextEditingController(text: '1');
-  String _unit = 'كغ';
-  // ✅ قيمة افتراضية بدل null — الحقل أصبح إجبارياً بالكامل
-  String? _brand = _noBrandOption;
+  // ✅ إصلاح جوهري: الوحدة والعلامة التجارية تُختاران الآن بمعرّف حقيقي
+  // (unit_id/brand_id) من قوائم فعلية، لا نص ثابت كما كان.
+  String? _unitId;
+  String _brandId = _noBrandOption;
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final productProvider = context.read<ProductProvider>();
       final storeProvider = context.read<StoreProvider>();
+      final catalogProvider = context.read<CatalogProvider>();
       if (productProvider.products.isEmpty) productProvider.loadProducts();
       if (storeProvider.stores.isEmpty) storeProvider.loadStores();
+      // ✅ جديد — تحميل الوحدات والعلامات التجارية الحقيقية من الخادم (أو
+      // MockData في وضع العرض التجريبي) بدل الاعتماد على قوائم ثابتة.
+      if (catalogProvider.units.isEmpty) {
+        await catalogProvider.loadUnits();
+      }
+      if (catalogProvider.brands.isEmpty) {
+        await catalogProvider.loadBrands();
+      }
+      if (!mounted) return;
+      // ✅ تعيين أول وحدة كقيمة افتراضية (يحافظ على نفس تجربة الاستخدام
+      // السابقة التي كانت تبدأ بقيمة مبدئية جاهزة بدل حقل فارغ).
+      if (_unitId == null && catalogProvider.units.isNotEmpty) {
+        setState(() => _unitId = catalogProvider.units.first.id);
+      }
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args is ProductModel) {
         setState(() => _selectedProductId = args.id);
+      } else if (args is StoreModel) {
+        // ✅ إصلاح جوهري: كان زر "إضافة سعر لهذا المتجر" (في شاشة تفاصيل
+        // المتجر) يمرّر StoreModel كوسيط، لكن هذه الشاشة لم تكن تتعرّف
+        // عليه إطلاقاً — فقط ProductModel كانت تُعامَل. النتيجة: المستخدم
+        // يصل لشاشة "إضافة سعر" فارغة تماماً ويُضطر لاختيار الكتلة
+        // والمنطقة والمحل يدوياً من جديد رغم أنه جاء أصلاً من صفحة ذلك
+        // المتجر بالذات. الآن تُعبَّأ الثلاثة تلقائياً: الكتلة (مُشتقّة من
+        // store.area عبر AleppoBlocks.blockOfArea)، والمنطقة (store.area
+        // مباشرة)، والمحل نفسه (store.id).
+        final block = AleppoBlocks.blockOfArea(args.area)?.name;
+        setState(() {
+          _selectedBlock = block;
+          _selectedArea = args.area;
+          _selectedStoreId = args.id;
+        });
       }
     });
   }
@@ -1187,20 +1721,29 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
     super.dispose();
   }
 
-  // ✅ عند تغيير الكتلة يُعاد ضبط المحل المختار تلقائياً، لمنع بقاء محل من
-  // كتلة سابقة لا ينتمي إلى الكتلة المختارة حديثاً.
-  void _onBlockChanged(String? block) {
-    if (block == null || block == _selectedBlock) return;
-    setState(() {
-      _selectedBlock = block;
-      _selectedStoreId = null;
-    });
+  // ✅ محدَّث — الكتلة والمنطقة تُختاران معاً في نفس السطر عبر منتقي الموقع
+  // الموحّد (showLocationPickerSheet، نفس المكوّن المستخدم في شريحة الموقع
+  // بالصفحة الرئيسية وصف "تغيير الموقع" بالإعدادات) بدل قائمتين منسدلتين
+  // منفصلتين. هذا يوحّد تجربة اختيار الموقع في كل شاشات التطبيق.
+  void _pickLocation() {
+    showLocationPickerSheet(
+      context,
+      currentBlock: _selectedBlock ?? '',
+      currentArea: _selectedArea ?? '',
+      onSelect: (block, area) => setState(() {
+        _selectedBlock = block;
+        _selectedArea = area;
+        // ✅ إعادة ضبط المحل المختار تلقائياً، لمنع بقاء محل من منطقة
+        // سابقة لا ينتمي إلى المنطقة المختارة حديثاً.
+        _selectedStoreId = null;
+      }),
+    );
   }
 
   Future<void> _submit() async {
-    if (_selectedBlock == null) {
+    if (_selectedBlock == null || _selectedArea == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('يرجى اختيار الكتلة الإدارية'),
+          content: Text('يرجى اختيار الكتلة الإدارية والمنطقة'),
           backgroundColor: AppColors.error));
       return;
     }
@@ -1210,9 +1753,10 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
           backgroundColor: AppColors.error));
       return;
     }
-    if (_brand == null) {
+    // ✅ محدَّث — التحقق الآن من unitId (معرّف حقيقي) بدل نص وحدة ثابت.
+    if (_unitId == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('يرجى اختيار العلامة التجارية'),
+          content: Text('يرجى اختيار الوحدة'),
           backgroundColor: AppColors.error));
       return;
     }
@@ -1231,12 +1775,12 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
           productId: _selectedProductId!,
           storeId: _selectedStoreId!,
           price: price,
-          unit: _unit,
+          unitId: _unitId!,
           quantity: qty,
-          // ✅ "بدون علامة تجارية" هو خيار عرض فقط — لا يُرسَل للـ backend
-          // كنص، بل يُترجَم إلى عدم إرسال حقل brand أصلاً (راجع
-          // PriceEntry.toJson: `if (brand.isNotEmpty) 'brand': brand`).
-          brand: _brand == _noBrandOption ? null : _brand,
+          // ✅ "بدون علامة تجارية" (معرّف فارغ '') خيار عرض فقط — لا يُرسَل
+          // للـ backend كسلسلة فارغة، بل يُترجَم إلى عدم إرسال brand_id
+          // أصلاً (راجع PriceService.submitPrice).
+          brandId: _brandId.isEmpty ? null : _brandId,
         );
     if (!mounted) return;
     setState(() => _loading = false);
@@ -1259,13 +1803,16 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
   Widget build(BuildContext context) {
     final products = context.watch<ProductProvider>().products;
     final allStores = context.watch<StoreProvider>().stores;
-    // ✅ محلات الكتلة المختارة فقط — فارغة حتى تُختار كتلة أولاً
-    final storesInBlock = _selectedBlock == null
+    // ✅ جديد — الوحدات والعلامات التجارية الحقيقية من الخادم (بدل قائمة
+    // وحدات ثابتة وMockData.brands)، لضمان أن ما يظهر للمستخدم مطابق تماماً
+    // لما يملكه الخادم فعلياً من unit_id/brand_id صالحة للإرسال.
+    final units = context.watch<CatalogProvider>().units;
+    final brands = context.watch<CatalogProvider>().brands;
+    // ✅ محدَّث — محلات المنطقة المختارة تحديداً فقط (وليس الكتلة كاملة) —
+    // فارغة حتى تُختار منطقة. هذا هو الفلتر الفعلي الذي يحدد قائمة المحل.
+    final storesInArea = _selectedArea == null
         ? const <StoreModel>[]
-        : allStores
-            .where(
-                (s) => AleppoBlocks.blockOfArea(s.area)?.name == _selectedBlock)
-            .toList();
+        : allStores.where((s) => s.area == _selectedArea).toList();
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -1295,59 +1842,37 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
               onChanged: (v) => setState(() => _selectedProductId = v),
             ),
             const SizedBox(height: 16),
-            // ✅ جديد — الكتلة الإدارية أولاً: تحدد قائمة المحلات المتاحة
-            // أدناه، ولا يمكن اختيار محل قبل اختيار كتلة.
-            _lbl(context, 'الكتلة الإدارية'),
+            // ══════════════════════════════════════════════════════════
+            // ✅ محدَّث — الكتلة والمنطقة أصبحتا حقلاً واحداً بنفس السطر،
+            // يُفتح عند النقر منتقي الموقع الموحّد (نفس المكوّن المستخدم في
+            // شريحة الموقع بالصفحة الرئيسية وصف "تغيير الموقع" بالإعدادات)
+            // بدل قائمتين منسدلتين منفصلتين متتاليتين. يحدد هذا الحقل
+            // قائمة المحلات المتاحة أدناه.
+            // ══════════════════════════════════════════════════════════
+            _lbl(context, 'الكتلة والمنطقة'),
             const SizedBox(height: 8),
-            _Dropdown(
-              hint: 'اختر الكتلة الإدارية',
-              value: _selectedBlock,
-              items: AleppoBlocks.blockNames,
-              onChanged: _onBlockChanged,
+            _LocationPickerField(
+              block: _selectedBlock,
+              area: _selectedArea,
+              onTap: _pickLocation,
             ),
             const SizedBox(height: 16),
+            // ══════════════════════════════════════════════════════════
+            // ✅ "المحل": يعتمد على المنطقة المختارة تحديداً، فتظهر فقط
+            // محلات نفس الحي بدل كل محلات الكتلة الإدارية.
+            // ══════════════════════════════════════════════════════════
             _lbl(context, 'المحل'),
             const SizedBox(height: 8),
-            _selectedBlock == null
-                ? Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceOf(context),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.borderOf(context)),
-                    ),
-                    child: Row(children: [
-                      Icon(Icons.lock_outline,
-                          size: 18, color: AppColors.textHintOf(context)),
-                      const SizedBox(width: 8),
-                      Text('اختر الكتلة الإدارية أولاً',
-                          style: TextStyle(
-                              color: AppColors.textHintOf(context),
-                              fontSize: 14)),
-                    ]),
-                  )
-                : storesInBlock.isEmpty
-                    ? Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceOf(context),
-                          borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: AppColors.borderOf(context)),
-                        ),
-                        child: Text('لا توجد محلات مسجّلة في هذه الكتلة',
-                            style: TextStyle(
-                                color: AppColors.textHintOf(context),
-                                fontSize: 14)),
-                      )
+            _selectedArea == null
+                ? _LockedField(text: 'اختر الكتلة والمنطقة أولاً')
+                : storesInArea.isEmpty
+                    ? _LockedField(
+                        text: 'لا توجد محلات مسجّلة في هذه المنطقة',
+                        icon: Icons.store_mall_directory_outlined)
                     : _IdDropdown(
                         hint: 'اختر المحل',
                         value: _selectedStoreId,
-                        items: {for (final s in storesInBlock) s.id: s.name},
+                        items: {for (final s in storesInArea) s.id: s.name},
                         onChanged: (v) => setState(() => _selectedStoreId = v),
                       ),
             const SizedBox(height: 16),
@@ -1370,11 +1895,14 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
                       children: [
                     _lbl(context, 'الوحدة'),
                     const SizedBox(height: 8),
-                    _Dropdown(
+                    // ✅ محدَّث — قائمة الوحدات الحقيقية (id → اسم) بدل نصوص
+                    // ثابتة، بنفس شكل وسلوك _IdDropdown المستخدم أصلاً لحقلَي
+                    // المنتج والمحل أعلاه.
+                    _IdDropdown(
                         hint: 'الوحدة',
-                        value: _unit,
-                        items: const ['كغ', 'غرام', 'لتر', 'قطعة', 'علبة'],
-                        onChanged: (v) => setState(() => _unit = v!)),
+                        value: _unitId,
+                        items: {for (final u in units) u.id: u.name},
+                        onChanged: (v) => setState(() => _unitId = v)),
                   ])),
             ]),
             const SizedBox(height: 16),
@@ -1387,14 +1915,17 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
             const SizedBox(height: 16),
             _lbl(context, 'العلامة التجارية'),
             const SizedBox(height: 8),
-            _Dropdown(
+            // ✅ محدَّث — قائمة العلامات التجارية الحقيقية (id → اسم) بدل
+            // MockData.brands، مع إبقاء خيار "بدون علامة تجارية" في أعلى
+            // القائمة بنفس مكانه وشكله تماماً (معرّفه الآن '' بدل نص ثابت).
+            _IdDropdown(
                 hint: 'اختر العلامة التجارية',
-                value: _brand,
-                items: [
-                  _noBrandOption,
-                  ...MockData.brands.map((b) => b.name),
-                ],
-                onChanged: (v) => setState(() => _brand = v)),
+                value: _brandId,
+                items: {
+                  _noBrandOption: 'بدون علامة تجارية',
+                  for (final b in brands) b.id: b.name,
+                },
+                onChanged: (v) => setState(() => _brandId = v ?? _noBrandOption)),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(12),
@@ -1435,6 +1966,98 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
           fontSize: 13,
           fontWeight: FontWeight.w500,
           color: AppColors.textPrimaryOf(context)));
+}
+
+/// ✅ جديد — عنصر عرض موحّد لحقل "مُقفَل" مؤقتاً ريثما يختار المستخدم
+/// المستوى الأعلى في سلسلة الاختيار (كتلة ← منطقة ← محل)، بنفس شكل حقول
+/// الإدخال العادية حتى لا يبدو التخطيط متقطعاً أثناء التنقل بين الحقول.
+/// ✅ جديد — حقل موحّد لاختيار "الكتلة الإدارية والمنطقة" معاً بنفس السطر،
+/// بنفس هوية منتقي الموقع المستخدم في شريحة الموقع بالصفحة الرئيسية وصف
+/// "تغيير الموقع" بالإعدادات (showLocationPickerSheet). عند النقر تُفتح
+/// نافذة سفلية تعرض الكتل الخمس قابلة للطي، كل كتلة تُظهر أحياءها عند
+/// فتحها، ويُختار الحي مباشرة من داخلها — فيُحدَّد الاثنان معاً بنقرة واحدة
+/// بدل قائمتين منسدلتين منفصلتين متتاليتين.
+class _LocationPickerField extends StatelessWidget {
+  final String? block;
+  final String? area;
+  final VoidCallback onTap;
+
+  const _LocationPickerField({
+    required this.block,
+    required this.area,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasValue = block != null && area != null;
+    final label =
+        hasValue ? AleppoBlocks.displayLabel(block: block!, area: area!) : null;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceOf(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: hasValue ? AppColors.primary : AppColors.borderOf(context),
+              width: hasValue ? 1.4 : 1),
+        ),
+        child: Row(children: [
+          Icon(Icons.location_on_outlined,
+              size: 20,
+              color:
+                  hasValue ? AppColors.primary : AppColors.textHintOf(context)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label ?? 'اختر الكتلة الإدارية والمنطقة',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
+                color: hasValue
+                    ? AppColors.textPrimaryOf(context)
+                    : AppColors.textHintOf(context),
+              ),
+            ),
+          ),
+          Icon(Icons.keyboard_arrow_down,
+              size: 20, color: AppColors.textHintOf(context)),
+        ]),
+      ),
+    );
+  }
+}
+
+class _LockedField extends StatelessWidget {
+  final String text;
+  final IconData icon;
+  const _LockedField({required this.text, this.icon = Icons.lock_outline});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceOf(context),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.borderOf(context)),
+        ),
+        child: Row(children: [
+          Icon(icon, size: 18, color: AppColors.textHintOf(context)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(
+                    color: AppColors.textHintOf(context), fontSize: 14)),
+          ),
+        ]),
+      );
 }
 
 class _Dropdown extends StatelessWidget {
@@ -1482,8 +2105,8 @@ class _Dropdown extends StatelessWidget {
 }
 
 /// ✅ جديد — نفس شكل [_Dropdown] لكن يحتفظ بمفتاح (id) مستقل عن التسمية
-/// المعروضة، حتى يمكن إرسال product_id/store_id الحقيقيين إلى الـ backend
-/// بدل الاسم النصي فقط.
+/// المعروضة، حتى يمكن إرسال product_id/store_id/unit_id/brand_id الحقيقيين
+/// إلى الـ backend بدل الاسم النصي فقط.
 class _IdDropdown extends StatelessWidget {
   final String hint;
   final String? value;
@@ -1590,17 +2213,17 @@ class _OfficialPricesScreenState extends State<OfficialPricesScreen> {
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 IconButton(
+                                  icon: const Icon(Icons.arrow_forward_ios,
+                                      color: Colors.white, size: 18),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                                IconButton(
                                   icon: Icon(
                                       provider.isDarkMode
                                           ? Icons.light_mode_outlined
                                           : Icons.dark_mode_outlined,
                                       color: Colors.white),
                                   onPressed: provider.toggleDarkMode,
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.arrow_forward_ios,
-                                      color: Colors.white, size: 18),
-                                  onPressed: () => Navigator.pop(context),
                                 ),
                               ]),
                           const SizedBox(height: 8),

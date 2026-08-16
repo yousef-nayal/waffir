@@ -83,8 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           // شريحة الموقع — أقصى اليمين
                           GestureDetector(
-                            onTap: () =>
-                                _showLocationPicker(context, provider),
+                            onTap: () => _showLocationPicker(context, provider),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 12, vertical: 6),
@@ -123,8 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   width: 36,
                                   height: 36,
                                   decoration: BoxDecoration(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.2),
+                                    color: Colors.white.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Icon(
@@ -144,8 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   width: 36,
                                   height: 36,
                                   decoration: BoxDecoration(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.2),
+                                    color: Colors.white.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: const Icon(
@@ -302,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: AppColors.primary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text('مقارنة رسمي',
+                        child: const Text('مقارنة مع السعر الرسمي',
                             style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.primary,
@@ -329,20 +326,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Center(child: CircularProgressIndicator()),
                   )
                 else
-                  ...gapProducts.map((p) => _ProductGapCard(product: p, isDark: isDark)),
+                  ...gapProducts
+                      .map((p) => _ProductGapCard(product: p, isDark: isDark)),
 
-                const SizedBox(height: 24),
-                Text('آخر النشاطات',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white : AppColors.textPrimary)),
-                const SizedBox(height: 12),
-                if (userActivity.isEmpty)
-                  Text('لا توجد نشاطات حديثة',
-                      style: TextStyle(color: AppColors.textSecondaryOf(context)))
-                else
-                  ...userActivity.map((a) => _ActivityItem(activity: a, isDark: isDark)),
+                // ✅ أُزيل قسم "آخر النشاطات" وما تحته من الشاشة الرئيسية
+                // بطلب مباشر. البيانات (userActivity) ما زالت تُحمَّل
+                // وتُستخدم في نافذة الإشعارات (_showNotifications) التي
+                // يفتحها زر الجرس في الرأس، فلم يُحذف أي منطق تحميل بيانات
+                // — فقط قسم العرض هذا في الجسم الرئيسي للشاشة.
                 const SizedBox(height: 80),
               ]),
             ),
@@ -379,8 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('الإشعارات',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700)),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 16),
               if (activity.isEmpty)
                 const Padding(
@@ -398,8 +388,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: const TextStyle(fontSize: 13)),
                       subtitle: Text(a['time']!,
                           style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textSecondary)),
+                              fontSize: 11, color: AppColors.textSecondary)),
                     )),
             ],
           ),
@@ -459,9 +448,8 @@ class _ProductGapCard extends StatelessWidget {
     final diff = product.realPrice - product.officialPrice;
     final isUp = diff > 0;
     final cardColor = Theme.of(context).cardColor;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : AppColors.border;
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.08) : AppColors.border;
 
     return GestureDetector(
       onTap: () => Navigator.pushNamed(context, AppRoutes.productDetail,
@@ -477,8 +465,7 @@ class _ProductGapCard extends StatelessWidget {
         child: Row(children: [
           // Price diff badge
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: isUp
                   ? AppColors.error.withValues(alpha: isDark ? 0.2 : 0.1)
@@ -487,8 +474,7 @@ class _ProductGapCard extends StatelessWidget {
             ),
             child: Column(children: [
               Icon(isUp ? Icons.trending_up : Icons.trending_down,
-                  color: isUp ? AppColors.error : AppColors.success,
-                  size: 16),
+                  color: isUp ? AppColors.error : AppColors.success, size: 16),
               Text('${product.changePercent.toStringAsFixed(0)}%',
                   style: TextStyle(
                       color: isUp ? AppColors.error : AppColors.success,
@@ -508,9 +494,7 @@ class _ProductGapCard extends StatelessWidget {
                       color: isDark ? Colors.white : AppColors.textPrimary)),
               Text(product.category,
                   style: TextStyle(
-                      color: isDark
-                          ? Colors.white54
-                          : AppColors.textSecondary,
+                      color: isDark ? Colors.white54 : AppColors.textSecondary,
                       fontSize: 12)),
               const SizedBox(height: 6),
               Row(mainAxisAlignment: MainAxisAlignment.start, children: [
@@ -555,77 +539,12 @@ class _ProductGapCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Icon(Icons.arrow_back_ios,
-              size: 14,
-              color: isDark ? Colors.white30 : AppColors.textHint),
+              size: 14, color: isDark ? Colors.white30 : AppColors.textHint),
         ]),
       ),
     );
   }
 
-  String _f(double v) => v >= 1000
-      ? '${(v / 1000).toStringAsFixed(0)},000'
-      : v.toStringAsFixed(0);
-}
-
-class _ActivityItem extends StatelessWidget {
-  final Map<String, dynamic> activity;
-  final bool isDark;
-  const _ActivityItem({required this.activity, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    const colorMap = {
-      'blue': AppColors.primary,
-      'green': AppColors.success,
-      'red': AppColors.error,
-      'purple': Color(0xFF8B5CF6),
-    };
-    const iconMap = {
-      'price': Icons.attach_money,
-      'report': Icons.flag_outlined,
-      'user': Icons.person_add_outlined,
-      'store': Icons.store_outlined,
-      'official': Icons.description_outlined,
-    };
-    final color = colorMap[activity['color']] ?? AppColors.primary;
-    final icon = iconMap[activity['type']] ?? Icons.info_outline;
-    final cardColor = Theme.of(context).cardColor;
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : AppColors.border;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor)),
-      child: Row(children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: isDark ? 0.2 : 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: color, size: 18),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(activity['text']!,
-              style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? Colors.white70 : AppColors.textPrimary),
-              textAlign: TextAlign.right),
-        ),
-        const SizedBox(width: 8),
-        Text(activity['time']!,
-            style: TextStyle(
-                fontSize: 10,
-                color:
-                    isDark ? Colors.white38 : AppColors.textSecondary)),
-      ]),
-    );
-  }
+  String _f(double v) =>
+      v >= 1000 ? '${(v / 1000).toStringAsFixed(0)},000' : v.toStringAsFixed(0);
 }

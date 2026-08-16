@@ -12,7 +12,8 @@ import 'features/user/user_shell.dart';
 import 'features/user/screens/products_screen.dart';
 import 'features/user/screens/stores_screen.dart';
 import 'features/user/screens/profile_screen.dart';
-// ✅ جديد
+// ✅ جديد — شاشة اقتراح متجر جديد
+import 'features/user/screens/add_store_screen.dart';
 import 'features/user/screens/official_price_history_screen.dart';
 import 'features/admin/admin_shell.dart';
 import 'features/legal/legal_screens.dart';
@@ -68,8 +69,9 @@ class WaffirApp extends StatelessWidget {
         AppRoutes.profile: (_) => const ProfileScreen(),
         AppRoutes.userSettings: (_) => const UserSettingsScreen(),
         AppRoutes.addPrice: (_) => const AddPriceScreen(),
+        // ✅ جديد
+        AppRoutes.addStore: (_) => const AddStoreScreen(),
         AppRoutes.officialPrices: (_) => const OfficialPricesScreen(),
-        // ✅ جديد — سجل تغييرات مادة واحدة من الأسعار الرسمية
         AppRoutes.officialPriceHistory: (_) =>
             const OfficialPriceHistoryScreen(),
         AppRoutes.privacyPolicy: (_) => const PrivacyPolicyScreen(),

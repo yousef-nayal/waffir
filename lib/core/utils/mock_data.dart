@@ -316,8 +316,18 @@ class MockData {
         isActive: true),
   ];
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — أنواع البلاغات أصبحت مطابقة تماماً للقيم الثلاث
+  // الحصرية المسموحة في عمود Report.type بقاعدة البيانات الفعلية (راجع
+  // ReportType في models.dart وWaffir_Database.txt). description أصبح
+  // يظهر فقط مع النوع 'معلومات غير صحيحة' تحديداً (مطابقةً لقيد الـ CHECK
+  // الثاني على نفس العمود)، وحُذف الاعتماد على status لأن جدول Report لا
+  // يحتوي عمود status إطلاقاً — البلاغ إما موجود (قيد المراجعة ضمنياً) أو
+  // يُحذَف نهائياً من قبل المسؤول (راجع "حذف البلاغ" في مخطط حالات
+  // الاستخدام و_deleteReport في admin_shell.dart).
   // ✅ storeArea أُضيف لكل بلاغ (يطابق area المتجر المعني في المصفوفة أعلاه)
   // ليعمل فلتر الكتلة الإدارية الجديد في شاشة "إدارة البلاغات".
+  // ══════════════════════════════════════════════════════════════════════
   static List<ReportModel> reports = [
     ReportModel(
         id: '1',
@@ -325,36 +335,33 @@ class MockData {
         storeName: 'سوبر ماركت النور',
         storeArea: 'الحمدانية الحي الأول', // الكتلة الخامسة
         userName: 'أحمد محمود',
-        type: 'wrong_price',
-        reportedAt: DateTime(2026, 5, 17, 14, 30),
-        status: 'pending'),
+        type: ReportType.overpriced,
+        reportedAt: DateTime(2026, 5, 17, 14, 30)),
     ReportModel(
         id: '2',
         productName: 'سكر أبيض',
         storeName: 'بقالة الخير',
         storeArea: 'العزيزية', // الكتلة الثانية
         userName: 'فاطمة علي',
-        type: 'outdated',
-        reportedAt: DateTime(2026, 5, 17, 13, 15),
-        status: 'reviewed'),
+        type: ReportType.wrongPrice,
+        reportedAt: DateTime(2026, 5, 17, 13, 15)),
     ReportModel(
         id: '3',
         productName: 'رز بسمتي',
         storeName: 'هايبر ماركت الشام',
         storeArea: 'السليمانية', // الكتلة الثانية
         userName: 'خالد حسن',
-        type: 'duplicate',
-        reportedAt: DateTime(2026, 5, 17, 11, 45),
-        status: 'pending'),
+        type: ReportType.wrongInfo,
+        description: 'يرجى التحقق من بيانات المنتج المسجّلة',
+        reportedAt: DateTime(2026, 5, 17, 11, 45)),
     ReportModel(
         id: '4',
         productName: 'زيت ذرة',
         storeName: 'مول الجلاء',
         storeArea: 'صلاح الدين', // الكتلة الرابعة
         userName: 'سارة محمد',
-        type: 'other',
-        reportedAt: DateTime(2026, 5, 17, 10, 20),
-        status: 'resolved'),
+        type: ReportType.overpriced,
+        reportedAt: DateTime(2026, 5, 17, 10, 20)),
   ];
 
   static List<OfficialPrice> officialPrices = [

@@ -56,7 +56,7 @@ class AppProvider extends ChangeNotifier {
   /// اسم المنطقة/الحي الحالي للمستخدم (مثال: "الفرقان")
   String get userLocation => _userLocation;
 
-  /// نص عرض جاهز يجمع المنطقة والكتلة معاً: "الفرقان — الكتلة الخامسة"
+  /// نص عرض جاهز يجمع الكتلة والمنطقة معاً: "الكتلة الخامسة — الفرقان"
   String get userLocationDisplay =>
       AleppoBlocks.displayLabel(block: _userBlock, area: _userLocation);
   String get userName => _userName;
@@ -551,6 +551,48 @@ class ProductProvider extends ChangeNotifier {
     }
   }
 
+  /// ✅ جديد — تعديل منتج موجود، مطابقةً لعنصر "تعديل" الناقص سابقاً ضمن
+  /// مخطط حالات الاستخدام لـ"إدارة المنتجات".
+  Future<bool> updateProduct(
+    String id, {
+    required String name,
+    required String category,
+    required String unit,
+  }) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      _products = _products
+          .map((p) => p.id == id
+              ? ProductModel(
+                  id: id,
+                  name: name,
+                  category: category,
+                  officialPrice: p.officialPrice,
+                  realPrice: p.realPrice,
+                  avgPrice: p.avgPrice,
+                  unit: unit,
+                  pricesCount: p.pricesCount,
+                  changePercent: p.changePercent,
+                  isPriceUp: p.isPriceUp,
+                )
+              : p)
+          .toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      final updated = await _service.updateProduct(id,
+          name: name, category: category, unit: unit);
+      _products = _products.map((p) => p.id == id ? updated : p).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// ✅ جديد
   Future<bool> deleteProduct(String id) async {
     if (AppConfig.useMockData) {
@@ -705,6 +747,35 @@ class StoreProvider extends ChangeNotifier {
       _stores = _stores
           .map((s) => s.id == id ? s.copyWith(isVerified: verified) : s)
           .toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// ✅ جديد — تعديل بيانات متجر (استخدام إداري)، مطابقةً لعنصر "تعديل"
+  /// في مخطط حالات الاستخدام لـ"إدارة المتاجر".
+  Future<bool> updateStore(
+    String id, {
+    required String name,
+    required String address,
+    String? locationId,
+  }) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      _stores = _stores
+          .map((s) => s.id == id ? s.copyWith(name: name, address: address) : s)
+          .toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      final updated = await _service.updateStore(id,
+          name: name, address: address, locationId: locationId);
+      _stores = _stores.map((s) => s.id == id ? updated : s).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -911,8 +982,16 @@ class PriceProvider extends ChangeNotifier {
     }
   }
 
-  /// PATCH /prices/{id}/approve أو /reject — مراجعة إدارية
-  Future<bool> review(String id, {required bool approve}) async {
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — حلّت محل review(approve/reject) السابقة. جدول Price في
+  // قاعدة البيانات الفعلية (Waffir_Database.txt) لا يحتوي عمود status
+  // إطلاقاً، فلا يوجد أي مكان حقيقي لحفظ حالة "مقبول/مرفوض". مخطط حالات
+  // الاستخدام يُدرج "حذف السعر" صراحة كالإجراء الإداري الوحيد ضمن "مراجعة
+  // الأسعار" — فأصبح الحذف النهائي هو مسار المراجعة الفعلي المتوافق مع
+  // كل من المخطط وقاعدة البيانات معاً.
+  // ══════════════════════════════════════════════════════════════════════
+  /// DELETE /prices/{id} — حذف سعر (مراجعة إدارية)
+  Future<bool> deletePrice(String id) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 400));
       _entries = _entries.where((e) => e.id != id).toList();
@@ -920,7 +999,7 @@ class PriceProvider extends ChangeNotifier {
       return true;
     }
     try {
-      await _priceService.reviewPrice(id, approve: approve);
+      await _priceService.deletePrice(id);
       _entries = _entries.where((e) => e.id != id).toList();
       notifyListeners();
       return true;
@@ -997,21 +1076,22 @@ class ReportProvider extends ChangeNotifier {
     }
   }
 
-  /// PATCH /reports/{id} — استخدام إداري
-  Future<bool> updateStatus(String id, String status) async {
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — حلّت محل updateStatus السابقة. جدول Report في قاعدة
+  // البيانات الفعلية لا يحتوي عمود status إطلاقاً، ومخطط حالات الاستخدام
+  // يُدرج "حذف البلاغ" صراحة كالإجراء الإداري الوحيد ضمن "إدارة البلاغات".
+  // ══════════════════════════════════════════════════════════════════════
+  /// DELETE /reports/{id} — حذف بلاغ (مراجعة إدارية)
+  Future<bool> deleteReport(String id) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
-      _reports = _reports
-          .map((r) => r.id == id ? r.copyWith(status: status) : r)
-          .toList();
+      _reports = _reports.where((r) => r.id != id).toList();
       notifyListeners();
       return true;
     }
     try {
-      await _service.updateReportStatus(id, status);
-      _reports = _reports
-          .map((r) => r.id == id ? r.copyWith(status: status) : r)
-          .toList();
+      await _service.deleteReport(id);
+      _reports = _reports.where((r) => r.id != id).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -1119,6 +1199,69 @@ class CatalogProvider extends ChangeNotifier {
     }
   }
 
+  /// ✅ جديد — تعديل سعر رسمي موجود، مطابقةً لعنصر "تعديل" في مخطط حالات
+  /// الاستخدام لـ"إدارة الأسعار الرسمية".
+  Future<bool> updateOfficialPrice(
+    String id, {
+    required String productId,
+    required String productName,
+    required String unitId,
+    required String unitName,
+    required double amount,
+    required double price,
+  }) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      officialPrices = officialPrices
+          .map((op) => op.id == id
+              ? OfficialPrice(
+                  id: id,
+                  productId: productId,
+                  productName: productName,
+                  unitId: unitId,
+                  unit: unitName,
+                  quantity: amount,
+                  price: price,
+                  updatedAt: DateTime.now())
+              : op)
+          .toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      final updated = await _service.updateOfficialPrice(id,
+          productId: productId, unitId: unitId, amount: amount, price: price);
+      officialPrices =
+          officialPrices.map((op) => op.id == id ? updated : op).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// ✅ جديد — حذف سعر رسمي، مطابقةً لعنصر "حذف" في نفس المخطط.
+  Future<bool> deleteOfficialPrice(String id) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      officialPrices = officialPrices.where((op) => op.id != id).toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      await _service.deleteOfficialPrice(id);
+      officialPrices = officialPrices.where((op) => op.id != id).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// GET /official-prices/{id}/history — ✅ جديد
   /// يُستدعى من OfficialPriceHistoryScreen عند فتح مادة معيّنة.
   Future<void> loadOfficialPriceHistory(String officialPriceId) async {
@@ -1192,6 +1335,33 @@ class CatalogProvider extends ChangeNotifier {
     }
   }
 
+  /// ✅ جديد — كانت هذه العملية معطَّلة سابقاً (نافذة "قيد التطوير") لعدم
+  /// وجود endpoint موثّق؛ أصبح موثّقاً الآن (راجع CatalogService.updateUnit)
+  /// مطابقةً لعنصر "تعديل" في مخطط حالات الاستخدام لـ"إدارة الوحدات".
+  Future<bool> updateUnit(String id, String name) async {
+    if (name.trim().isEmpty) return false;
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      units = units
+          .map((u) => u.id == id
+              ? UnitModel(id: id, name: name, usageCount: u.usageCount)
+              : u)
+          .toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      final updated = await _service.updateUnit(id, name);
+      units = units.map((u) => u.id == id ? updated : u).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> deleteUnit(String id) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
@@ -1249,6 +1419,31 @@ class CatalogProvider extends ChangeNotifier {
     try {
       final b = await _service.createBrand(name);
       brands = [...brands, b];
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// ✅ جديد — تعديل علامة تجارية موجودة (نفس منطق updateUnit أعلاه).
+  Future<bool> updateBrand(String id, String name) async {
+    if (name.trim().isEmpty) return false;
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      brands = brands
+          .map((b) => b.id == id
+              ? BrandModel(id: id, name: name, productsCount: b.productsCount)
+              : b)
+          .toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      final updated = await _service.updateBrand(id, name);
+      brands = brands.map((b) => b.id == id ? updated : b).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -1332,6 +1527,62 @@ class CatalogProvider extends ChangeNotifier {
     }
   }
 
+  /// ✅ جديد — تعديل موقع/حي موجود، مطابقةً لعنصر "تعديل" في مخطط حالات
+  /// الاستخدام لـ"إدارة المواقع والكتل".
+  Future<bool> updateLocation(
+    String id, {
+    required String sector,
+    required String area,
+    required String landmark,
+  }) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      locations = locations
+          .map((l) => l.id == id
+              ? LocationModel(
+                  id: id,
+                  sector: sector,
+                  area: area,
+                  landmark: landmark,
+                  storesCount: l.storesCount)
+              : l)
+          .toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      final updated = await _service.updateLocation(id,
+          sector: sector, area: area, landmark: landmark);
+      locations = locations.map((l) => l.id == id ? updated : l).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// ✅ جديد — حذف موقع/حي، مطابقةً لعنصر "حذف" في نفس المخطط.
+  Future<bool> deleteLocation(String id) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      locations = locations.where((l) => l.id != id).toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      await _service.deleteLocation(id);
+      locations = locations.where((l) => l.id != id).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════════════
   // ✅ جديد — يبحث عن location_id الحقيقي المطابق لاسم حي معيّن ضمن قائمة
   // المواقع المُحمَّلة من الخادم (locations، عبر loadLocations أعلاه).
@@ -1405,6 +1656,12 @@ class AdminUsersProvider extends ChangeNotifier {
   bool isLoading = false;
   String? errorMessage;
 
+  /// ✅ جديد — قائمة المسؤولين فقط (role == 'admin')، تُستخدم في شاشة
+  /// "عرض المسؤولين" الجديدة ضمن الإعدادات (راجع مخطط حالات الاستخدام:
+  /// عرض المسؤولين --extend--> إضافة/تعديل/بحث/حذف مسؤول). تُشتقّ من نفس
+  /// [users] المُحمَّلة عبر loadUsers، فلا حاجة لطلب شبكة منفصل.
+  List<UserModel> get admins => users.where((u) => u.role == 'admin').toList();
+
   Future<void> loadUsers({String? search, String? status}) async {
     isLoading = true;
     notifyListeners();
@@ -1467,6 +1724,93 @@ class AdminUsersProvider extends ChangeNotifier {
       await _service.setUserRole(id, role);
       users =
           users.map((u) => u.id == id ? u.copyWith(role: role) : u).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// ✅ جديد — إضافة مستخدم جديد مباشرة من لوحة الإدارة، مطابقةً لعنصر
+  /// "إضافة" ضمن الأفعال الموحّدة في مخطط حالات الاستخدام لـ"إدارة
+  /// المستخدمين". [role] اختياري ('admin' عند استخدامها من شاشة "عرض
+  /// المسؤولين" لإنشاء حساب مسؤول جديد مباشرة).
+  Future<bool> createUser({
+    required String name,
+    required String phone,
+    required String password,
+    required String locationId,
+    String role = 'user',
+  }) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      users = [
+        ...users,
+        UserModel(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          name: name,
+          phone: phone,
+          role: role,
+          isActive: true,
+        ),
+      ];
+      notifyListeners();
+      return true;
+    }
+    try {
+      final u = await _service.createUser(
+          name: name,
+          phone: phone,
+          password: password,
+          locationId: locationId,
+          role: role);
+      users = [...users, u];
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// ✅ جديد — تعديل بيانات مستخدم (الاسم)، مطابقةً لعنصر "تعديل" ضمن
+  /// الأفعال الموحّدة التي يُدرجها مخطط حالات الاستخدام لكل من "إدارة
+  /// المستخدمين" و"عرض المسؤولين" (كلتاهما تعتمدان على نفس هذا الـ
+  /// Provider، راجع AdminAdminsScreen في admin_shell.dart).
+  Future<bool> updateUser(String id, {required String name}) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      users =
+          users.map((u) => u.id == id ? u.copyWith(name: name) : u).toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      final updated = await _service.updateUser(id, name: name);
+      users = users.map((u) => u.id == id ? updated : u).toList();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      errorMessage = e.message;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// ✅ جديد — حذف مستخدم نهائياً، مطابقةً لعنصر "حذف" في نفس المخطط.
+  Future<bool> deleteUser(String id) async {
+    if (AppConfig.useMockData) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      users = users.where((u) => u.id != id).toList();
+      notifyListeners();
+      return true;
+    }
+    try {
+      await _service.deleteUser(id);
+      users = users.where((u) => u.id != id).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {

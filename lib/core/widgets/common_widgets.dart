@@ -555,13 +555,17 @@ Future<bool?> showConfirmDialog(
 }
 
 // ── Add Dialog ────────────────────────────────────────────────────────────────
+// ✅ محدَّث — أُضيف [initialValue] اختياري ليُستخدَم أيضاً كنافذة "تعديل"
+// موحّدة (تعبئة الحقل بالقيمة الحالية) بدل الاقتصار على الإضافة فقط.
 Future<String?> showAddDialog(
   BuildContext context, {
   required String title,
   required String fieldLabel,
   required String hint,
+  String? initialValue,
+  String confirmLabel = 'إضافة',
 }) {
-  final ctrl = TextEditingController();
+  final ctrl = TextEditingController(text: initialValue ?? '');
   return showDialog<String>(
     context: context,
     builder: (ctx) => Directionality(
@@ -610,7 +614,7 @@ Future<String?> showAddDialog(
                     minimumSize: const Size(0, 44),
                     padding: EdgeInsets.zero,
                   ),
-                  child: const Text('إضافة'),
+                  child: Text(confirmLabel),
                 ),
               ),
             ],

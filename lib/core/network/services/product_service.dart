@@ -66,6 +66,23 @@ class ProductService {
     );
   }
 
+  /// PUT /products/{id} — ✅ جديد — تعديل منتج موجود (استخدام إداري)،
+  /// مطابقةً لعنصر "تعديل" الناقص سابقاً ضمن الأفعال الموحّدة في مخطط
+  /// حالات الاستخدام لـ"إدارة المنتجات".
+  Future<ProductModel> updateProduct(
+    String id, {
+    required String name,
+    required String category,
+    required String unit,
+  }) {
+    return _api.put<ProductModel>(
+      '/products/$id',
+      data: {'name': name, 'category': category, 'unit': unit},
+      fromJson: (json) =>
+          ProductModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
   /// DELETE /products/{id} — (استخدام إداري)
   Future<void> deleteProduct(String id) {
     return _api.delete<void>('/products/$id');

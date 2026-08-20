@@ -64,9 +64,14 @@ class PriceService {
     return _api.post<void>('/prices/$id/vote', data: {'is_up': isUp});
   }
 
-  /// PATCH /prices/{id}/approve أو /reject — (استخدام إداري)
-  Future<void> reviewPrice(String id, {required bool approve}) {
-    final action = approve ? 'approve' : 'reject';
-    return _api.patch<void>('/prices/$id/$action');
+  /// DELETE /prices/{id} — ✅ جديد — (استخدام إداري) حذف سعر نهائياً.
+  /// حلّت محل reviewPrice (موافقة/رفض) السابقة: جدول Price في قاعدة
+  /// البيانات الفعلية لا يحتوي عمود status إطلاقاً (راجع
+  /// Waffir_Database.txt)، فلا وجود فعلي لحالة "قيد المراجعة/مقبول/مرفوض"
+  /// يمكن حفظها. مخطط حالات الاستخدام يُدرج "حذف السعر" صراحة كالإجراء
+  /// الوحيد المطلوب ضمن "مراجعة الأسعار" — فأصبح الحذف هو مسار المراجعة
+  /// الإدارية الفعلي (حذف أي سعر خاطئ/مضلِّل يكتشفه المسؤول أثناء المراجعة).
+  Future<void> deletePrice(String id) {
+    return _api.delete<void>('/prices/$id');
   }
 }

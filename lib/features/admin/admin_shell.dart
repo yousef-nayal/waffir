@@ -502,7 +502,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 // ══════════════════════════════════════════════════════════════════════════════
 // PRICE REVIEW SCREEN
 // ✅ الآن يقرأ من PriceProvider.loadAdminPrices() وتوجد أزرار موافقة/رفض
-// فعلية تستدعي PriceProvider.review() (كانت الشاشة سابقاً جدولاً للعرض فقط
+// فعلية تستدعي PriceProvider.deletePrice() (كانت الشاشة سابقاً جدولاً للعرض فقط
 // بلا أي إجراء).
 // ✅ جديد — فلتر الحي بجانب فلتر الكتلة الإدارية، يظهر فقط بعد اختيار كتلة.
 // ══════════════════════════════════════════════════════════════════════════════
@@ -513,6 +513,12 @@ class AdminPriceReviewScreen extends StatefulWidget {
 }
 
 class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — أُزيل فلتر "قيد المراجعة" (كان يعتمد على e.status)
+  // لأن جدول Price في قاعدة البيانات الفعلية (Waffir_Database.txt) لا
+  // يحتوي عمود status إطلاقاً. أُبقي فلتر "مشهورة" فقط لأنه فرز عرضي بحت
+  // (حسب totalRatings) لا يعتمد على أي عمود غير موجود.
+  // ══════════════════════════════════════════════════════════════════════
   String _filter = 'الكل';
   // ✅ فلتر الكتلة الإدارية، يُشتق تصنيف كل سعر تلقائياً من حقل
   // e.storeArea الموجود أصلاً في PriceEntry عبر AleppoBlocks.blockOfArea
@@ -521,6 +527,8 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
   // ✅ جديد — فلتر الحي، يظهر فقط بعد اختيار كتلة إدارية محددة، ويُعاد
   // ضبطه تلقائياً إلى "الكل" كلما تغيّرت الكتلة.
   String _areaFilter = 'الكل';
+  // ✅ جديد — نص البحث، يُطبَّق محلياً على اسم المنتج/المتجر/المستخدم
+  String _search = '';
 
   @override
   void initState() {
@@ -530,20 +538,27 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
     });
   }
 
-  Future<void> _review(PriceEntry e, bool approve) async {
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ إصلاح جوهري — حلّت محل _review(approve/reject). جدول Price لا
+  // يحتوي عمود status، ومخطط حالات الاستخدام يُدرج "حذف السعر" صراحة
+  // كالإجراء الإداري الوحيد ضمن "مراجعة الأسعار". يُطلب تأكيد صريح قبل
+  // الحذف بما أنه إجراء نهائي لا رجعة فيه.
+  // ══════════════════════════════════════════════════════════════════════
+  Future<void> _deletePrice(PriceEntry e) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'حذف السعر',
+      message: 'هل تريد حذف سعر "${e.productName}" نهائياً؟',
+      confirmText: 'حذف',
+      icon: Icons.delete_outline,
+    );
+    if (confirmed != true || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await context.read<PriceProvider>().review(
-          e.id,
-          approve: approve,
-        );
+    final ok = await context.read<PriceProvider>().deletePrice(e.id);
     if (!mounted) return;
     messenger.showSnackBar(
       SnackBar(
-        content: Text(
-          ok
-              ? (approve ? 'تمت الموافقة على السعر' : 'تم رفض السعر')
-              : 'تعذّر تنفيذ الإجراء',
-        ),
+        content: Text(ok ? 'تم حذف السعر' : 'تعذّر حذف السعر'),
         backgroundColor: ok ? AppColors.success : AppColors.error,
       ),
     );
@@ -552,9 +567,16 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final priceProvider = context.watch<PriceProvider>();
-    var entries = _filter == 'قيد المراجعة'
-        ? priceProvider.entries.where((e) => e.status == 'pending').toList()
-        : priceProvider.entries;
+    var entries = priceProvider.entries;
+    if (_search.trim().isNotEmpty) {
+      final q = _search.trim();
+      entries = entries
+          .where((e) =>
+              e.productName.contains(q) ||
+              e.storeName.contains(q) ||
+              e.submittedBy.contains(q))
+          .toList();
+    }
     if (_blockFilter != 'الكل') {
       entries = entries
           .where(
@@ -566,12 +588,17 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
     if (_areaFilter != 'الكل') {
       entries = entries.where((e) => e.storeArea == _areaFilter).toList();
     }
+    // ✅ "مشهورة" فرز عرضي حسب عدد التقييمات (لا يعتمد على عمود status)
+    if (_filter == 'مشهورة') {
+      entries = [...entries]
+        ..sort((a, b) => b.totalRatings.compareTo(a.totalRatings));
+    }
 
     return Column(
       children: [
         const _AdminGradientHeader(
           title: 'مراجعة الأسعار',
-          subtitle: 'راجع وأدر الأسعار المقدمة من المستخدمين',
+          subtitle: 'راجع الأسعار المقدمة من المستخدمين واحذف غير الصحيح منها',
           icon: Icons.attach_money,
         ),
         Padding(
@@ -579,7 +606,12 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const WaffirSearchField(hint: 'ابحث عن منتج، متجر أو مستخدم...'),
+              // ✅ إصلاح — كان حقل البحث زخرفياً بلا onChanged؛ أصبح الآن
+              // مربوطاً فعلياً بفلترة القائمة محلياً.
+              WaffirSearchField(
+                hint: 'ابحث عن منتج، متجر أو مستخدم...',
+                onChanged: (v) => setState(() => _search = v),
+              ),
               const SizedBox(height: 10),
               // فلتر الكتلة الإدارية
               FilterChipRow(
@@ -605,7 +637,7 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
               ],
               const SizedBox(height: 8),
               FilterChipRow(
-                options: const ['الكل', 'قيد المراجعة', 'مشهورة'],
+                options: const ['الكل', 'مشهورة'],
                 selected: _filter,
                 onSelected: (v) => setState(() => _filter = v),
               ),
@@ -717,46 +749,29 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
                                 ),
                               ],
                               const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _review(e, false),
-                                      icon: const Icon(
-                                        Icons.close,
-                                        size: 16,
-                                        color: AppColors.error,
-                                      ),
-                                      label: const Text(
-                                        'رفض',
-                                        style:
-                                            TextStyle(color: AppColors.error),
-                                      ),
-                                      style: OutlinedButton.styleFrom(
-                                        side: const BorderSide(
-                                          color: AppColors.error,
-                                        ),
-                                        minimumSize: const Size(0, 38),
-                                      ),
-                                    ),
+                              // ✅ إصلاح جوهري — زر "حذف السعر" فقط، بدل
+                              // موافقة/رفض السابقين اللذين افترضا عمود status
+                              // غير موجود فعلياً في جدول Price.
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _deletePrice(e),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 16,
+                                    color: AppColors.error,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: ElevatedButton.icon(
-                                      onPressed: () => _review(e, true),
-                                      icon: const Icon(
-                                        Icons.check,
-                                        size: 16,
-                                        color: Colors.white,
-                                      ),
-                                      label: const Text('موافقة'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.success,
-                                        minimumSize: const Size(0, 38),
-                                      ),
-                                    ),
+                                  label: const Text(
+                                    'حذف السعر',
+                                    style: TextStyle(color: AppColors.error),
                                   ),
-                                ],
+                                  style: OutlinedButton.styleFrom(
+                                    side: const BorderSide(
+                                      color: AppColors.error,
+                                    ),
+                                    minimumSize: const Size(0, 38),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -771,8 +786,14 @@ class _AdminPriceReviewScreenState extends State<AdminPriceReviewScreen> {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // REPORTS SCREEN
-// ✅ الآن يقرأ من ReportProvider، وكل صف قابل للنقر لتحديث حالة البلاغ
-// عبر ReportProvider.updateStatus().
+// ✅ الآن يقرأ من ReportProvider، وكل بلاغ يحمل زر "حذف" فعلي عبر
+// ReportProvider.deleteReport() — حلّت محل تحديث الحالة (تمت المراجعة/تم
+// الحل/قيد الانتظار) لأن جدول Report في قاعدة البيانات الفعلية لا يحتوي
+// عمود status إطلاقاً، ومخطط حالات الاستخدام يُدرج "حذف البلاغ" صراحة
+// كالإجراء الإداري الوحيد ضمن "إدارة البلاغات".
+// ✅ أنواع البلاغات أصبحت مطابقة تماماً للقيم الثلاث الحصرية في عمود
+// Report.type (راجع ReportType في models.dart): سعر مبالغ فيه، سعر غير
+// صحيح، معلومات غير صحيحة — بدل 4 مفاتيح إنجليزية لم تكن تطابق القاعدة.
 // ✅ جديد — فلتر الحي بجانب فلتر الكتلة الإدارية، يظهر فقط بعد اختيار كتلة.
 // ══════════════════════════════════════════════════════════════════════════════
 class AdminReportsScreen extends StatefulWidget {
@@ -782,6 +803,7 @@ class AdminReportsScreen extends StatefulWidget {
 }
 
 class _AdminReportsScreenState extends State<AdminReportsScreen> {
+  // ✅ فلتر حسب نوع البلاغ (القيم الثلاث الفعلية) بدل فلتر حالة غير موجودة
   String _filter = 'الكل';
   // ✅ فلتر الكتلة الإدارية، يُشتق تصنيف كل بلاغ تلقائياً من حقل
   // r.storeArea (راجع ReportModel في models.dart) عبر AleppoBlocks.blockOfArea.
@@ -789,6 +811,8 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   // ✅ جديد — فلتر الحي، يظهر فقط بعد اختيار كتلة إدارية محددة، ويُعاد
   // ضبطه تلقائياً إلى "الكل" كلما تغيّرت الكتلة.
   String _areaFilter = 'الكل';
+  // ✅ جديد — نص البحث المربوط فعلياً بحقل البحث
+  String _search = '';
 
   @override
   void initState() {
@@ -800,66 +824,45 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
   String _typeLabel(String t) {
     switch (t) {
-      case 'wrong_price':
+      case ReportType.overpriced:
+        return 'سعر\nمبالغ فيه';
+      case ReportType.wrongPrice:
         return 'سعر\nغير صحيح';
-      case 'outdated':
-        return 'سعر\nقديم';
-      case 'duplicate':
-        return 'تكرار';
+      case ReportType.wrongInfo:
+        return 'معلومات\nغير صحيحة';
       default:
-        return 'أخرى';
+        return t;
     }
   }
 
   Color _typeColor(String t) {
     switch (t) {
-      case 'wrong_price':
-        return AppColors.error;
-      case 'outdated':
+      case ReportType.overpriced:
         return AppColors.warning;
-      case 'duplicate':
+      case ReportType.wrongPrice:
+        return AppColors.error;
+      case ReportType.wrongInfo:
         return Colors.blue;
       default:
         return AppColors.textSecondary;
     }
   }
 
-  Future<void> _changeStatus(ReportModel r) async {
-    final chosen = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: const Text('تمت المراجعة'),
-                onTap: () => Navigator.pop(ctx, 'reviewed'),
-              ),
-              ListTile(
-                title: const Text('تم الحل'),
-                onTap: () => Navigator.pop(ctx, 'resolved'),
-              ),
-              ListTile(
-                title: const Text('قيد الانتظار'),
-                onTap: () => Navigator.pop(ctx, 'pending'),
-              ),
-            ],
-          ),
-        ),
-      ),
+  Future<void> _deleteReport(ReportModel r) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'حذف البلاغ',
+      message: 'هل تريد حذف هذا البلاغ عن "${r.productName}" نهائياً؟',
+      confirmText: 'حذف',
+      icon: Icons.delete_outline,
     );
-    if (chosen == null || !mounted) return;
+    if (confirmed != true || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await context.read<ReportProvider>().updateStatus(r.id, chosen);
+    final ok = await context.read<ReportProvider>().deleteReport(r.id);
     if (!mounted) return;
     messenger.showSnackBar(
       SnackBar(
-        content: Text(ok ? 'تم تحديث حالة البلاغ' : 'تعذّر التحديث'),
+        content: Text(ok ? 'تم حذف البلاغ' : 'تعذّر حذف البلاغ'),
         backgroundColor: ok ? AppColors.success : AppColors.error,
       ),
     );
@@ -868,12 +871,18 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final reportProvider = context.watch<ReportProvider>();
-    final statusMap = {'قيد الانتظار': 'pending', 'تمت المراجعة': 'reviewed'};
     var reports = _filter == 'الكل'
         ? reportProvider.reports
-        : reportProvider.reports
-            .where((r) => r.status == statusMap[_filter])
-            .toList();
+        : reportProvider.reports.where((r) => r.type == _filter).toList();
+    if (_search.trim().isNotEmpty) {
+      final q = _search.trim();
+      reports = reports
+          .where((r) =>
+              r.productName.contains(q) ||
+              r.storeName.contains(q) ||
+              r.userName.contains(q))
+          .toList();
+    }
     if (_blockFilter != 'الكل') {
       reports = reports
           .where(
@@ -890,7 +899,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       children: [
         const _AdminGradientHeader(
           title: 'إدارة البلاغات',
-          subtitle: 'راجع وأدر البلاغات المقدمة من المستخدمين',
+          subtitle: 'راجع البلاغات المقدمة من المستخدمين واحذف غير اللازم منها',
           icon: Icons.flag_outlined,
         ),
         Padding(
@@ -898,7 +907,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const WaffirSearchField(hint: 'ابحث عن منتج، متجر أو مستخدم...'),
+              // ✅ إصلاح — كان حقل البحث زخرفياً بلا onChanged
+              WaffirSearchField(
+                hint: 'ابحث عن منتج، متجر أو مستخدم...',
+                onChanged: (v) => setState(() => _search = v),
+              ),
               const SizedBox(height: 10),
               // فلتر الكتلة الإدارية
               FilterChipRow(
@@ -924,7 +937,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               ],
               const SizedBox(height: 8),
               FilterChipRow(
-                options: const ['الكل', 'قيد الانتظار', 'تمت المراجعة'],
+                options: const ['الكل', ...ReportType.all],
                 selected: _filter,
                 onSelected: (v) => setState(() => _filter = v),
               ),
@@ -950,120 +963,127 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         final r = reports[i];
                         final block =
                             AleppoBlocks.blockOfArea(r.storeArea)?.name;
-                        return GestureDetector(
-                          onTap: () => _changeStatus(r),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceOf(context),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.borderOf(context),
                             ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceOf(context),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: AppColors.borderOf(context),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: _typeColor(
-                                          r.type,
-                                        ).withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        _typeLabel(r.type),
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: _typeColor(r.type),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
                                     ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            '${r.productName} — ${r.storeName}',
-                                            style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          Text(
-                                            'بلّغ عنه: ${r.userName}',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: AppColors.textSecondaryOf(
-                                                context,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                    decoration: BoxDecoration(
+                                      color: _typeColor(
+                                        r.type,
+                                      ).withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      r.status == 'pending'
-                                          ? 'قيد الانتظار'
-                                          : r.status == 'reviewed'
-                                              ? 'تمت المراجعة'
-                                              : 'تم الحل',
+                                    child: Text(
+                                      _typeLabel(r.type),
+                                      textAlign: TextAlign.center,
                                       style: TextStyle(
-                                        fontSize: 11,
-                                        color: r.status == 'resolved'
-                                            ? AppColors.success
-                                            : AppColors.textSecondaryOf(
-                                                context),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (block != null) ...[
-                                  const SizedBox(height: 6),
-                                  // ✅ شارة الكتلة الإدارية + الحي لكل بلاغ
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 3,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withValues(
-                                          alpha: 0.08,
-                                        ),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        r.storeArea.isEmpty
-                                            ? block
-                                            : '$block — ${r.storeArea}',
-                                        style: const TextStyle(
-                                          fontSize: 10.5,
-                                          color: AppColors.primary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                        fontSize: 10,
+                                        color: _typeColor(r.type),
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${r.productName} — ${r.storeName}',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        Text(
+                                          'بلّغ عنه: ${r.userName}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textSecondaryOf(
+                                              context,
+                                            ),
+                                          ),
+                                        ),
+                                        if (r.description != null &&
+                                            r.description!.isNotEmpty)
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              r.description!,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontStyle: FontStyle.italic,
+                                                color:
+                                                    AppColors.textSecondaryOf(
+                                                        context),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // ✅ زر الحذف الفعلي بدل تغيير الحالة
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        color: AppColors.error, size: 20),
+                                    onPressed: () => _deleteReport(r),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
                                 ],
+                              ),
+                              if (block != null) ...[
+                                const SizedBox(height: 6),
+                                // ✅ شارة الكتلة الإدارية + الحي لكل بلاغ
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.08,
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      r.storeArea.isEmpty
+                                          ? block
+                                          : '$block — ${r.storeArea}',
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
-                            ),
+                            ],
                           ),
                         );
                       },
@@ -1076,8 +1096,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // USERS SCREEN
-// ✅ الآن يقرأ من AdminUsersProvider، وكل صف قابل للنقر لفتح إجراءات فعلية
-// (حظر/رفع حظر، ترقية إلى مدير) عبر AdminUsersProvider.
+// ✅ الآن يقرأ من AdminUsersProvider، وكل صف قابل للنقر لفتح إجراءات فعلية:
+// حظر/رفع حظر، ترقية/تخفيض دور، تعديل الاسم، وحذف نهائي — بالإضافة إلى زر
+// "إضافة مستخدم" في الرأس. هذا يكمل الأفعال الخمسة الموحّدة (عرض/إضافة/
+// تعديل/بحث/حذف) التي يُدرجها مخطط حالات الاستخدام لـ"إدارة المستخدمين"،
+// وكانت "إضافة" و"حذف" و"تعديل" مفقودة تماماً سابقاً.
 // ══════════════════════════════════════════════════════════════════════════════
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({super.key});
@@ -1093,6 +1116,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AdminUsersProvider>().loadUsers();
+      final catalog = context.read<CatalogProvider>();
+      if (catalog.locations.isEmpty) catalog.loadLocations();
     });
   }
 
@@ -1108,6 +1133,12 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading:
+                    const Icon(Icons.edit_outlined, color: AppColors.primary),
+                title: const Text('تعديل الاسم'),
+                onTap: () => Navigator.pop(ctx, 'edit'),
+              ),
               ListTile(
                 leading: Icon(
                   u.isActive ? Icons.block : Icons.check_circle_outline,
@@ -1126,6 +1157,13 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 ),
                 onTap: () => Navigator.pop(ctx, 'toggle_role'),
               ),
+              ListTile(
+                leading:
+                    const Icon(Icons.delete_outline, color: AppColors.error),
+                title: const Text('حذف المستخدم',
+                    style: TextStyle(color: AppColors.error)),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
             ],
           ),
         ),
@@ -1134,6 +1172,30 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     if (action == null || !mounted) return;
     final provider = context.read<AdminUsersProvider>();
     final messenger = ScaffoldMessenger.of(context);
+
+    if (action == 'edit') {
+      await _showEditUser(u);
+      return;
+    }
+    if (action == 'delete') {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'حذف المستخدم',
+        message:
+            'هل تريد حذف "${u.name}" نهائياً؟ لا يمكن التراجع عن هذا الإجراء.',
+        confirmText: 'حذف',
+        icon: Icons.delete_outline,
+      );
+      if (confirmed != true || !mounted) return;
+      final ok = await provider.deleteUser(u.id);
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(ok ? 'تم حذف المستخدم' : 'تعذّر حذف المستخدم'),
+        backgroundColor: ok ? AppColors.success : AppColors.error,
+      ));
+      return;
+    }
+
     bool ok = false;
     if (action == 'toggle_block') {
       ok = await provider.setBlocked(u.id, u.isActive);
@@ -1149,6 +1211,225 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
+  Future<void> _showEditUser(UserModel u) async {
+    final nameCtrl = TextEditingController(text: u.name);
+    await showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('تعديل بيانات المستخدم',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('الاسم الكامل', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameCtrl,
+                textDirection: TextDirection.rtl,
+                decoration: const InputDecoration(hintText: 'اسم المستخدم'),
+              ),
+            ],
+          ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        padding: EdgeInsets.zero),
+                    child: const Text('إلغاء'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (nameCtrl.text.trim().isEmpty) return;
+                      final navigator = Navigator.of(ctx);
+                      final ok = await context
+                          .read<AdminUsersProvider>()
+                          .updateUser(u.id, name: nameCtrl.text.trim());
+                      navigator.pop();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content:
+                            Text(ok ? 'تم تحديث البيانات' : 'تعذّر التحديث'),
+                        backgroundColor:
+                            ok ? AppColors.success : AppColors.error,
+                      ));
+                    },
+                    style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        padding: EdgeInsets.zero),
+                    child: const Text('حفظ'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        ),
+      ),
+    );
+  }
+
+  /// ✅ جديد — إضافة مستخدم جديد مباشرة من لوحة الإدارة، مطابقةً لعنصر
+  /// "إضافة" الناقص سابقاً. يستخدم نفس منتقي الموقع الموحّد (الكتل الخمس)
+  /// المستخدم في بقية التطبيق، ثم يترجم الاختيار إلى location_id حقيقي.
+  void _showAddUser(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    String? selectedBlock;
+    String? selectedArea;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('إضافة مستخدم جديد',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('الاسم الكامل', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: nameCtrl,
+                      textDirection: TextDirection.rtl,
+                      decoration:
+                          const InputDecoration(hintText: 'مثال: أحمد محمد')),
+                  const SizedBox(height: 14),
+                  const Text('رقم الهاتف', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      textDirection: TextDirection.ltr,
+                      decoration:
+                          const InputDecoration(hintText: '09xxxxxxxx')),
+                  const SizedBox(height: 14),
+                  const Text('كلمة المرور المبدئية',
+                      style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: passwordCtrl,
+                      obscureText: true,
+                      decoration:
+                          const InputDecoration(hintText: '6 أحرف على الأقل')),
+                  const SizedBox(height: 14),
+                  const Text('الكتلة والمنطقة', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => showLocationPickerSheet(
+                      context,
+                      currentBlock: selectedBlock ?? '',
+                      currentArea: selectedArea ?? '',
+                      onSelect: (block, area) => setDialogState(() {
+                        selectedBlock = block;
+                        selectedArea = area;
+                      }),
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.borderOf(ctx)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        selectedArea == null
+                            ? 'اختر الكتلة الإدارية والمنطقة'
+                            : AleppoBlocks.displayLabel(
+                                block: selectedBlock!, area: selectedArea!),
+                        style: TextStyle(
+                            color: selectedArea == null
+                                ? AppColors.textHintOf(ctx)
+                                : AppColors.textPrimaryOf(ctx)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (nameCtrl.text.trim().isEmpty ||
+                            phoneCtrl.text.trim().isEmpty ||
+                            passwordCtrl.text.trim().length < 6 ||
+                            selectedArea == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('يرجى تعبئة كل الحقول بشكل صحيح'),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                          return;
+                        }
+                        final locationId = context
+                            .read<CatalogProvider>()
+                            .locationIdForArea(selectedArea!);
+                        final navigator = Navigator.of(ctx);
+                        final ok =
+                            await context.read<AdminUsersProvider>().createUser(
+                                  name: nameCtrl.text.trim(),
+                                  phone: phoneCtrl.text.trim(),
+                                  password: passwordCtrl.text,
+                                  locationId: locationId ?? '',
+                                );
+                        navigator.pop();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(
+                              ok ? 'تمت إضافة المستخدم' : 'تعذّرت الإضافة'),
+                          backgroundColor:
+                              ok ? AppColors.success : AppColors.error,
+                        ));
+                      },
+                      style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('إضافة'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final usersProvider = context.watch<AdminUsersProvider>();
@@ -1160,10 +1441,12 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
 
     return Column(
       children: [
-        const _AdminGradientHeader(
+        _AdminGradientHeader(
           title: 'إدارة المستخدمين',
           subtitle: 'إدارة حسابات المستخدمين والصلاحيات',
           icon: Icons.people_outlined,
+          actionLabel: 'إضافة مستخدم',
+          onAction: () => _showAddUser(context),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1314,10 +1597,15 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
     });
   }
 
-  void _showAddProduct(BuildContext context) {
-    final nameCtrl = TextEditingController();
-    final catCtrl = TextEditingController();
-    String unit = 'كغ';
+  /// ✅ جديد — نافذة إضافة/تعديل موحّدة. عند تمرير [existing] تعمل كنافذة
+  /// تعديل (تُعبَّأ الحقول مسبقاً وتستدعي ProductProvider.updateProduct)،
+  /// وإلا فهي نافذة إضافة كما كانت (ProductProvider.createProduct). هذا
+  /// يكمل عنصر "تعديل" الناقص سابقاً في مخطط حالات الاستخدام.
+  void _showProductDialog(BuildContext context, {ProductModel? existing}) {
+    final isEdit = existing != null;
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final catCtrl = TextEditingController(text: existing?.category ?? '');
+    String unit = existing?.unit ?? 'كغ';
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -1327,9 +1615,9 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            title: const Text(
-              'إضافة منتج جديد',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            title: Text(
+              isEdit ? 'تعديل المنتج' : 'إضافة منتج جديد',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1381,18 +1669,31 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                       onPressed: () async {
                         if (nameCtrl.text.trim().isEmpty) return;
                         final navigator = Navigator.of(ctx);
-                        final ok =
-                            await context.read<ProductProvider>().createProduct(
-                                  name: nameCtrl.text.trim(),
-                                  category: catCtrl.text.trim(),
-                                  unit: unit,
-                                );
+                        final provider = context.read<ProductProvider>();
+                        final ok = isEdit
+                            ? await provider.updateProduct(
+                                existing.id,
+                                name: nameCtrl.text.trim(),
+                                category: catCtrl.text.trim(),
+                                unit: unit,
+                              )
+                            : await provider.createProduct(
+                                name: nameCtrl.text.trim(),
+                                category: catCtrl.text.trim(),
+                                unit: unit,
+                              );
                         navigator.pop();
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              ok ? 'تمت إضافة المنتج' : 'تعذّر إضافة المنتج',
+                              ok
+                                  ? (isEdit
+                                      ? 'تم تعديل المنتج'
+                                      : 'تمت إضافة المنتج')
+                                  : (isEdit
+                                      ? 'تعذّر التعديل'
+                                      : 'تعذّر إضافة المنتج'),
                             ),
                             backgroundColor:
                                 ok ? AppColors.success : AppColors.error,
@@ -1403,7 +1704,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                         minimumSize: const Size(0, 44),
                         padding: EdgeInsets.zero,
                       ),
-                      child: const Text('إضافة'),
+                      child: Text(isEdit ? 'حفظ' : 'إضافة'),
                     ),
                   ),
                 ],
@@ -1446,7 +1747,7 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
           subtitle: 'أضف وراجع منتجات النظام',
           icon: Icons.inventory_2_outlined,
           actionLabel: 'إضافة منتج',
-          onAction: () => _showAddProduct(context),
+          onAction: () => _showProductDialog(context),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1476,44 +1777,84 @@ class _AdminProductsScreenState extends State<AdminProductsScreen> {
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: AppColors.borderOf(context)),
                       ),
-                      child: Row(
+                      // ══════════════════════════════════════════════════
+                      // ✅ إصلاح فيضان النص (overflow) — كانت البطاقة صفاً
+                      // واحداً: اسم المنتج كنص غير مرن بلا حد أقصى للأسطر
+                      // يليه Spacer، فحين يطول اسم المنتج (مثال: "زيت زيتون
+                      // فلسطين") يتجاوز الصف عرض الشاشة المتاح فعلياً
+                      // ("RIGHT OVERFLOWED" في وضع التصحيح). الحل: اسم
+                      // المنتج أصبح داخل Expanded بسطر واحد وعلامة "..."
+                      // عند الحاجة، وانتقلت بيانات الفئة/عدد الأسعار/متوسط
+                      // السعر إلى صف ثانٍ منفصل، بلا أي تغيير في المعلومات
+                      // المعروضة أو الأزرار نفسها.
+                      // ══════════════════════════════════════════════════
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            p.name,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  p.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.edit_outlined,
+                                  size: 18,
+                                  color: AppColors.textSecondary,
+                                ),
+                                onPressed: () =>
+                                    _showProductDialog(context, existing: p),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 18,
+                                  color: AppColors.error,
+                                ),
+                                onPressed: () => _confirmDelete(p),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
                           ),
-                          const Spacer(),
-                          Text(
-                            p.category,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '${p.pricesCount}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '${(p.avgPrice / 1000).toStringAsFixed(0)},000 ل.س',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              size: 18,
-                              color: AppColors.error,
-                            ),
-                            onPressed: () => _confirmDelete(p),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  p.category,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                '${p.pricesCount} سعر',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                '${(p.avgPrice / 1000).toStringAsFixed(0)},000 ل.س',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -1555,6 +1896,8 @@ class _AdminStoresScreenState extends State<AdminStoresScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<StoreProvider>().loadStores();
+      final catalog = context.read<CatalogProvider>();
+      if (catalog.locations.isEmpty) catalog.loadLocations();
     });
   }
 
@@ -1571,6 +1914,294 @@ class _AdminStoresScreenState extends State<AdminStoresScreen> {
         backgroundColor: ok ? AppColors.success : AppColors.error,
       ),
     );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ جديد — إضافة متجر مباشرة من لوحة الإدارة. كانت "إدارة المتاجر" هي
+  // الشاشة الإدارية الوحيدة التي لا تملك زر "إضافة" رغم أن مخطط حالات
+  // الاستخدام يُدرج صراحة أن "إدارة المتاجر" تتضمّن الميزات المشتركة
+  // الخمس (عرض/إضافة/تعديل/بحث/حذف) تماماً مثل إدارة المنتجات والمواقع
+  // والوحدات والعلامات التجارية والأسعار الرسمية — التي تملك جميعها زر
+  // إضافة في رأسها بالفعل. تستخدم نفس منتقي الموقع الموحّد ونفس آلية
+  // ترجمة الحي المختار إلى location_id حقيقي عبر
+  // CatalogProvider.locationIdForArea، بنفس منطق _showEditStore أدناه
+  // وAddStoreScreen (مسار المستخدم العادي) تماماً.
+  // ══════════════════════════════════════════════════════════════════════
+  void _showAddStore(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final addressCtrl = TextEditingController();
+    String? selectedBlock;
+    String? selectedArea;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('إضافة متجر جديد',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('اسم المتجر', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: nameCtrl,
+                      textDirection: TextDirection.rtl,
+                      decoration:
+                          const InputDecoration(hintText: 'مثال: محل الأمانة')),
+                  const SizedBox(height: 14),
+                  const Text('العنوان', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: addressCtrl,
+                      textDirection: TextDirection.rtl,
+                      decoration: const InputDecoration(
+                          hintText: 'مثال: شارع الفرقان الرئيسي')),
+                  const SizedBox(height: 14),
+                  const Text('الكتلة والمنطقة', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => showLocationPickerSheet(
+                      context,
+                      currentBlock: selectedBlock ?? '',
+                      currentArea: selectedArea ?? '',
+                      onSelect: (block, area) => setDialogState(() {
+                        selectedBlock = block;
+                        selectedArea = area;
+                      }),
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.borderOf(ctx)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        selectedArea == null
+                            ? 'اختر الكتلة الإدارية والمنطقة'
+                            : AleppoBlocks.displayLabel(
+                                block: selectedBlock!, area: selectedArea!),
+                        style: TextStyle(
+                            color: selectedArea == null
+                                ? AppColors.textHintOf(ctx)
+                                : AppColors.textPrimaryOf(ctx)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (nameCtrl.text.trim().isEmpty ||
+                            addressCtrl.text.trim().isEmpty ||
+                            selectedArea == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('يرجى تعبئة كل الحقول بشكل صحيح'),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                          return;
+                        }
+                        final locationId = context
+                            .read<CatalogProvider>()
+                            .locationIdForArea(selectedArea!);
+                        final navigator = Navigator.of(ctx);
+                        final ok =
+                            await context.read<StoreProvider>().createStore(
+                                  name: nameCtrl.text.trim(),
+                                  address: addressCtrl.text.trim(),
+                                  area: selectedArea!,
+                                  sector: selectedBlock!,
+                                  locationId: locationId,
+                                );
+                        navigator.pop();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content:
+                              Text(ok ? 'تمت إضافة المتجر' : 'تعذّرت الإضافة'),
+                          backgroundColor:
+                              ok ? AppColors.success : AppColors.error,
+                        ));
+                      },
+                      style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('إضافة'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ✅ جديد — تعديل بيانات متجر (الاسم/العنوان/الموقع)، مطابقةً لعنصر
+  /// "تعديل" الناقص سابقاً في مخطط حالات الاستخدام لـ"إدارة المتاجر".
+  void _showEditStore(StoreModel s) {
+    final nameCtrl = TextEditingController(text: s.name);
+    final addressCtrl = TextEditingController(text: s.address);
+    String? selectedBlock = AleppoBlocks.blockOfArea(s.area)?.name;
+    String? selectedArea = s.area;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('تعديل المتجر',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('اسم المتجر', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: nameCtrl, textDirection: TextDirection.rtl),
+                  const SizedBox(height: 14),
+                  const Text('العنوان', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: addressCtrl,
+                      textDirection: TextDirection.rtl),
+                  const SizedBox(height: 14),
+                  const Text('الكتلة والمنطقة', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => showLocationPickerSheet(
+                      context,
+                      currentBlock: selectedBlock ?? '',
+                      currentArea: selectedArea ?? '',
+                      onSelect: (block, area) => setDialogState(() {
+                        selectedBlock = block;
+                        selectedArea = area;
+                      }),
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.borderOf(ctx)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        selectedArea == null
+                            ? 'اختر الكتلة والمنطقة'
+                            : AleppoBlocks.displayLabel(
+                                block: selectedBlock!, area: selectedArea!),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (nameCtrl.text.trim().isEmpty ||
+                            addressCtrl.text.trim().isEmpty) {
+                          return;
+                        }
+                        final locationId = selectedArea == s.area
+                            ? null // لم يتغيّر الموقع
+                            : context
+                                .read<CatalogProvider>()
+                                .locationIdForArea(selectedArea!);
+                        final navigator = Navigator.of(ctx);
+                        final ok =
+                            await context.read<StoreProvider>().updateStore(
+                                  s.id,
+                                  name: nameCtrl.text.trim(),
+                                  address: addressCtrl.text.trim(),
+                                  locationId: locationId,
+                                );
+                        navigator.pop();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content:
+                              Text(ok ? 'تم تعديل المتجر' : 'تعذّر التعديل'),
+                          backgroundColor:
+                              ok ? AppColors.success : AppColors.error,
+                        ));
+                      },
+                      style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('حفظ'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ✅ جديد — حذف متجر، مطابقةً لعنصر "حذف" الناقص سابقاً في نفس المخطط.
+  Future<void> _confirmDeleteStore(StoreModel s) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'حذف المتجر',
+      message: 'هل تريد حذف "${s.name}" نهائياً؟',
+      confirmText: 'حذف',
+      icon: Icons.delete_outline,
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await context.read<StoreProvider>().deleteStore(s.id);
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(ok ? 'تم حذف المتجر' : 'تعذّر حذف المتجر'),
+      backgroundColor: ok ? AppColors.success : AppColors.error,
+    ));
   }
 
   @override
@@ -1593,10 +2224,16 @@ class _AdminStoresScreenState extends State<AdminStoresScreen> {
 
     return Column(
       children: [
-        const _AdminGradientHeader(
+        // ✅ إصلاح جوهري — أُضيف زر "إضافة متجر" (كان غائباً تماماً)
+        // مطابقةً لمخطط حالات الاستخدام الذي يُدرج "إدارة المتاجر" ضمن
+        // الشاشات التي تتضمّن الميزات المشتركة الخمس كاملة (عرض/إضافة/
+        // تعديل/بحث/حذف)، بنفس نمط بقية شاشات لوحة الإدارة.
+        _AdminGradientHeader(
           title: 'إدارة المتاجر',
-          subtitle: 'راجع وتحقق من المتاجر المسجلة',
+          subtitle: 'راجع وتحقق من المتاجر المسجلة، وأضف متاجر جديدة مباشرة',
           icon: Icons.store_outlined,
+          actionLabel: 'إضافة متجر',
+          onAction: () => _showAddStore(context),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1671,39 +2308,80 @@ class _AdminStoresScreenState extends State<AdminStoresScreen> {
                             border:
                                 Border.all(color: AppColors.borderOf(context)),
                           ),
+                          // ══════════════════════════════════════════════
+                          // ✅ إصلاح فيضان النص (overflow) جوهري — كانت
+                          // البطاقة صفاً واحداً مزدحماً بعناصر ثابتة العرض
+                          // بلا حد أقصى للأسطر (اسم المتجر، اسم الحي، عدّاد
+                          // الأسعار، شارة التوثيق، زرّا التعديل/الحذف)، فحين
+                          // يطول اسم المتجر أو الحي (مثال: "الحمدانية الحي
+                          // الأول") يضيق الحيّز المتبقي لنص العنوان (Expanded)
+                          // حتى الانضغاط والالتفاف حرفاً حرفاً عمودياً، مع
+                          // فيضان فعلي لبقية الصف عن حدود الشاشة
+                          // ("RIGHT OVERFLOWED" في وضع التصحيح).
+                          //
+                          // الحل: إعادة ترتيب البطاقة على 3 صفوف، وكل نص
+                          // متغيّر الطول محدود الآن بسطر واحد وعلامة "..."
+                          // عند الحاجة (اسم المتجر، العنوان، اسم الحي)، بلا
+                          // أي فقدان لأي معلومة كانت معروضة سابقاً:
+                          //   1) اسم المتجر (Expanded) + عدد الأسعار + تعديل/حذف
+                          //   2) العنوان الكامل بسطر واحد
+                          //   3) شارة التوثيق (قابلة للنقر) + شارتا الحي/الكتلة
+                          // ══════════════════════════════════════════════
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    s.name,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    s.area,
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      s.address,
+                                      s.name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.right,
-                                      style: const TextStyle(fontSize: 11),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    '${s.pricesCount}',
-                                    style: const TextStyle(fontSize: 12),
+                                    '${s.pricesCount} سعر',
+                                    style: const TextStyle(fontSize: 11),
                                   ),
-                                  const SizedBox(width: 10),
+                                  const SizedBox(width: 6),
+                                  // ✅ أزرار تعديل/حذف
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined,
+                                        size: 16,
+                                        color: AppColors.textSecondary),
+                                    onPressed: () => _showEditStore(s),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        size: 16, color: AppColors.error),
+                                    onPressed: () => _confirmDeleteStore(s),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                s.address,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondaryOf(context),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
                                   GestureDetector(
                                     onTap: () => _toggleVerify(s),
                                     child: Container(
@@ -1746,32 +2424,69 @@ class _AdminStoresScreenState extends State<AdminStoresScreen> {
                                       ),
                                     ),
                                   ),
+                                  const SizedBox(width: 8),
+                                  // ✅ شارتا الحي والكتلة الإدارية داخل Wrap
+                                  // مرن بدل Row ثابت، فلا تفيضان عن الشاشة
+                                  // مهما طال اسم الحي.
+                                  Expanded(
+                                    child: Wrap(
+                                      alignment: WrapAlignment.start,
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        Container(
+                                          constraints: const BoxConstraints(
+                                              maxWidth: 140),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary
+                                                .withValues(alpha: 0.08),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            s.area,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 10.5,
+                                              color: AppColors.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        // ✅ شارة الكتلة الإدارية
+                                        Container(
+                                          constraints: const BoxConstraints(
+                                              maxWidth: 140),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary
+                                                .withValues(alpha: 0.08),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            block,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 10.5,
+                                              color: AppColors.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ],
-                              ),
-                              const SizedBox(height: 6),
-                              // ✅ شارة الكتلة الإدارية أسفل كل متجر
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.08,
-                                    ),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    block,
-                                    style: const TextStyle(
-                                      fontSize: 10.5,
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
                               ),
                             ],
                           ),
@@ -1802,6 +2517,8 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
   String _blockFilter = 'الكل';
   // ✅ جديد — فلترة إضافية حسب الحي داخل الكتلة المختارة
   String _areaFilter = 'الكل';
+  // ✅ جديد — نص البحث المربوط فعلياً بحقل البحث (كان زخرفياً بلا فلترة)
+  String _search = '';
 
   @override
   void initState() {
@@ -1816,10 +2533,19 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
   // بإدخال أي نص عشوائي. الآن قائمتان منسدلتان مترابطتان: الكتلة أولاً، ثم
   // الحي الذي يُبنى تلقائياً من أحياء تلك الكتلة فقط (aleppo_blocks.dart)،
   // بالإضافة إلى حقل "المعلم" الحر لوصف تفاصيل إضافية (شارع، دوار...).
-  void _showAddLocation(BuildContext context) {
-    final landmarkCtrl = TextEditingController();
-    String selectedBlock = AleppoBlocks.all.first.name;
-    String selectedArea = AleppoBlocks.all.first.areas.first;
+  //
+  // ✅ محدَّث — أصبحت نافذة موحّدة إضافة/تعديل: تمرير [existing] يحوّلها
+  // لنافذة تعديل (CatalogProvider.updateLocation)، مطابقةً لعنصر "تعديل"
+  // الناقص سابقاً في مخطط حالات الاستخدام لـ"إدارة المواقع والكتل".
+  void _showLocationDialog(BuildContext context, {LocationModel? existing}) {
+    final isEdit = existing != null;
+    final landmarkCtrl = TextEditingController(text: existing?.landmark ?? '');
+    String selectedBlock = existing?.sector ?? AleppoBlocks.all.first.name;
+    final _areasForBlock = AleppoBlocks.areasOfBlock(selectedBlock);
+    String selectedArea = existing?.area ??
+        (_areasForBlock.isNotEmpty
+            ? _areasForBlock.first
+            : AleppoBlocks.all.first.areas.first);
 
     showDialog(
       context: context,
@@ -1830,9 +2556,9 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
             ),
-            title: const Text(
-              'إضافة موقع جديد',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            title: Text(
+              isEdit ? 'تعديل الموقع' : 'إضافة موقع جديد',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             content: SingleChildScrollView(
               child: Column(
@@ -1914,18 +2640,29 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
                     child: ElevatedButton(
                       onPressed: () async {
                         final navigator = Navigator.of(ctx);
-                        final ok =
-                            await context.read<CatalogProvider>().addLocation(
-                                  sector: selectedBlock,
-                                  area: selectedArea,
-                                  landmark: landmarkCtrl.text.trim(),
-                                );
+                        final provider = context.read<CatalogProvider>();
+                        final ok = isEdit
+                            ? await provider.updateLocation(
+                                existing.id,
+                                sector: selectedBlock,
+                                area: selectedArea,
+                                landmark: landmarkCtrl.text.trim(),
+                              )
+                            : await provider.addLocation(
+                                sector: selectedBlock,
+                                area: selectedArea,
+                                landmark: landmarkCtrl.text.trim(),
+                              );
                         navigator.pop();
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              ok ? 'تمت الإضافة' : 'تعذّرت الإضافة',
+                              ok
+                                  ? (isEdit ? 'تم التعديل' : 'تمت الإضافة')
+                                  : (isEdit
+                                      ? 'تعذّر التعديل'
+                                      : 'تعذّرت الإضافة'),
                             ),
                             backgroundColor:
                                 ok ? AppColors.success : AppColors.error,
@@ -1936,7 +2673,7 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
                         minimumSize: const Size(0, 44),
                         padding: EdgeInsets.zero,
                       ),
-                      child: const Text('إضافة'),
+                      child: Text(isEdit ? 'حفظ' : 'إضافة'),
                     ),
                   ),
                 ],
@@ -1949,6 +2686,25 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
     );
   }
 
+  /// ✅ جديد — حذف موقع، مطابقةً لعنصر "حذف" الناقص سابقاً في نفس المخطط.
+  Future<void> _confirmDeleteLocation(LocationModel l) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'حذف الموقع',
+      message: 'هل تريد حذف "${l.area}" نهائياً؟',
+      confirmText: 'حذف',
+      icon: Icons.delete_outline,
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await context.read<CatalogProvider>().deleteLocation(l.id);
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(ok ? 'تم حذف الموقع' : 'تعذّر حذف الموقع'),
+      backgroundColor: ok ? AppColors.success : AppColors.error,
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<CatalogProvider>();
@@ -1959,6 +2715,13 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
     if (_areaFilter != 'الكل') {
       locations = locations.where((l) => l.area == _areaFilter).toList();
     }
+    // ✅ إصلاح — كان حقل البحث زخرفياً بلا onChanged
+    if (_search.trim().isNotEmpty) {
+      final q = _search.trim();
+      locations = locations
+          .where((l) => l.area.contains(q) || l.landmark.contains(q))
+          .toList();
+    }
 
     return Column(
       children: [
@@ -1967,14 +2730,17 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
           subtitle: 'أدر الكتل الإدارية الخمس وأحياءها',
           icon: Icons.location_on_outlined,
           actionLabel: 'إضافة موقع',
-          onAction: () => _showAddLocation(context),
+          onAction: () => _showLocationDialog(context),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const WaffirSearchField(hint: 'ابحث عن حي أو معلم...'),
+              WaffirSearchField(
+                hint: 'ابحث عن حي أو معلم...',
+                onChanged: (v) => setState(() => _search = v),
+              ),
               const SizedBox(height: 10),
               // ✅ فلترة حسب الكتلة الإدارية
               FilterChipRow(
@@ -2030,57 +2796,110 @@ class _AdminLocationsScreenState extends State<AdminLocationsScreen> {
                             border:
                                 Border.all(color: AppColors.borderOf(context)),
                           ),
-                          child: Row(
+                          // ══════════════════════════════════════════════
+                          // ✅ إصلاح فيضان النص (overflow) جوهري — كان اسم
+                          // الحي (l.area) نصاً غير مرن بلا حد أقصى للأسطر،
+                          // فحين يطول (مثال: "الحمدانية الحي الأول") يضيق
+                          // الحيّز المتبقي لنص "المعلم" (Expanded) لدرجة
+                          // تجعله يلتف حرفاً حرفاً عمودياً بجانب فيضان فعلي
+                          // للصف كاملاً عن حدود الشاشة. الحل: صفان منفصلان —
+                          // الأول لاسم الحي (Expanded) + عدد المتاجر + زرّي
+                          // التعديل/الحذف، والثاني لشارة الكتلة + المعلم،
+                          // وكل نص متغيّر الطول محدود الآن بسطر واحد مع "..."
+                          // عند الحاجة.
+                          // ══════════════════════════════════════════════
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Text(
-                                l.area,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Icon(
-                                Icons.location_on_outlined,
-                                size: 14,
-                                color: AppColors.primary,
-                              ),
-                              const SizedBox(width: 2),
-                              Expanded(
-                                child: Text(
-                                  l.landmark,
-                                  textAlign: TextAlign.right,
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                '${l.storesCount}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              // ✅ شارة الكتلة الإدارية بدل نص "حلب" العام السابق
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      AppColors.primary.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  l.sector,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      l.area,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${l.storesCount}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // ✅ أزرار تعديل/حذف، مطابقةً لمخطط حالات
+                                  // الاستخدام لـ"إدارة المواقع والكتل".
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined,
+                                        size: 16,
+                                        color: AppColors.textSecondary),
+                                    onPressed: () => _showLocationDialog(
+                                        context,
+                                        existing: l),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        size: 16, color: AppColors.error),
+                                    onPressed: () => _confirmDeleteLocation(l),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  // ✅ شارة الكتلة الإدارية بدل نص "حلب" العام
+                                  // السابق
+                                  Container(
+                                    constraints:
+                                        const BoxConstraints(maxWidth: 130),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      l.sector,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    Icons.location_on_outlined,
+                                    size: 14,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Expanded(
+                                    child: Text(
+                                      l.landmark,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.right,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -2103,6 +2922,10 @@ class AdminUnitsScreen extends StatefulWidget {
 }
 
 class _AdminUnitsScreenState extends State<AdminUnitsScreen> {
+  // ✅ جديد — حقل بحث لم يكن موجوداً إطلاقاً سابقاً رغم إدراجه ضمن الأفعال
+  // الموحّدة في مخطط حالات الاستخدام لـ"إدارة الوحدات".
+  String _search = '';
+
   @override
   void initState() {
     super.initState();
@@ -2114,6 +2937,9 @@ class _AdminUnitsScreenState extends State<AdminUnitsScreen> {
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<CatalogProvider>();
+    final units = _search.trim().isEmpty
+        ? catalog.units
+        : catalog.units.where((u) => u.name.contains(_search.trim())).toList();
     return Column(
       children: [
         _AdminGradientHeader(
@@ -2141,15 +2967,22 @@ class _AdminUnitsScreenState extends State<AdminUnitsScreen> {
             );
           },
         ),
-        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: WaffirSearchField(
+            hint: 'ابحث عن وحدة...',
+            onChanged: (v) => setState(() => _search = v),
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
           child: catalog.isLoading && catalog.units.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: catalog.units.length,
+                  itemCount: units.length,
                   itemBuilder: (ctx, i) {
-                    final u = catalog.units[i];
+                    final u = units[i];
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.symmetric(
@@ -2195,15 +3028,38 @@ class _AdminUnitsScreenState extends State<AdminUnitsScreen> {
                                   color: AppColors.textSecondary,
                                   size: 20,
                                 ),
-                                // ✅ لا يوجد endpoint موثّق لتعديل وحدة موجودة — نوضّح
-                                // ذلك بدل ترك الزر بلا استجابة أو محاكاة نجاح كاذب.
-                                onPressed: () => showComingSoonDialog(
-                                  ctx,
-                                  title: 'تعديل الوحدة',
-                                  message:
-                                      'تعديل اسم وحدة موجودة يتطلب endpoint إضافياً '
-                                      '(PATCH /units/{id}) غير موجود بعد في التوثيق.',
-                                ),
+                                // ✅ إصلاح جوهري — أصبح endpoint التعديل موثّقاً
+                                // فعلياً (PUT /units/{id}، راجع CatalogService.
+                                // updateUnit)، فحلّت نافذة تعديل حقيقية محل
+                                // رسالة "قيد التطوير" السابقة.
+                                onPressed: () async {
+                                  final name = await showAddDialog(
+                                    context,
+                                    title: 'تعديل الوحدة',
+                                    fieldLabel: 'اسم الوحدة',
+                                    hint: 'مثال: كيلوغرام',
+                                    initialValue: u.name,
+                                    confirmLabel: 'حفظ',
+                                  );
+                                  if (name == null ||
+                                      name.trim().isEmpty ||
+                                      !mounted) {
+                                    return;
+                                  }
+                                  final ok = await context
+                                      .read<CatalogProvider>()
+                                      .updateUnit(u.id, name.trim());
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          ok ? 'تم التعديل' : 'تعذّر التعديل'),
+                                      backgroundColor: ok
+                                          ? AppColors.success
+                                          : AppColors.error,
+                                    ),
+                                  );
+                                },
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                               ),
@@ -2270,6 +3126,9 @@ class AdminBrandsScreen extends StatefulWidget {
 }
 
 class _AdminBrandsScreenState extends State<AdminBrandsScreen> {
+  // ✅ جديد — حقل بحث لم يكن موجوداً إطلاقاً سابقاً
+  String _search = '';
+
   @override
   void initState() {
     super.initState();
@@ -2281,6 +3140,9 @@ class _AdminBrandsScreenState extends State<AdminBrandsScreen> {
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<CatalogProvider>();
+    final brands = _search.trim().isEmpty
+        ? catalog.brands
+        : catalog.brands.where((b) => b.name.contains(_search.trim())).toList();
     return Column(
       children: [
         _AdminGradientHeader(
@@ -2308,15 +3170,22 @@ class _AdminBrandsScreenState extends State<AdminBrandsScreen> {
             );
           },
         ),
-        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: WaffirSearchField(
+            hint: 'ابحث عن علامة تجارية...',
+            onChanged: (v) => setState(() => _search = v),
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
           child: catalog.isLoading && catalog.brands.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: catalog.brands.length,
+                  itemCount: brands.length,
                   itemBuilder: (ctx, i) {
-                    final b = catalog.brands[i];
+                    final b = brands[i];
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.symmetric(
@@ -2362,13 +3231,37 @@ class _AdminBrandsScreenState extends State<AdminBrandsScreen> {
                                   color: AppColors.textSecondary,
                                   size: 20,
                                 ),
-                                onPressed: () => showComingSoonDialog(
-                                  ctx,
-                                  title: 'تعديل العلامة التجارية',
-                                  message:
-                                      'تعديل علامة تجارية موجودة يتطلب endpoint إضافياً '
-                                      '(PATCH /brands/{id}) غير موجود بعد في التوثيق.',
-                                ),
+                                // ✅ إصلاح جوهري — أصبح endpoint التعديل موثّقاً
+                                // فعلياً (PUT /brands/{id})، فحلّت نافذة تعديل
+                                // حقيقية محل رسالة "قيد التطوير" السابقة.
+                                onPressed: () async {
+                                  final name = await showAddDialog(
+                                    context,
+                                    title: 'تعديل العلامة التجارية',
+                                    fieldLabel: 'اسم العلامة التجارية',
+                                    hint: 'مثال: فلسطين',
+                                    initialValue: b.name,
+                                    confirmLabel: 'حفظ',
+                                  );
+                                  if (name == null ||
+                                      name.trim().isEmpty ||
+                                      !mounted) {
+                                    return;
+                                  }
+                                  final ok = await context
+                                      .read<CatalogProvider>()
+                                      .updateBrand(b.id, name.trim());
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          ok ? 'تم التعديل' : 'تعذّر التعديل'),
+                                      backgroundColor: ok
+                                          ? AppColors.success
+                                          : AppColors.error,
+                                    ),
+                                  );
+                                },
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                               ),
@@ -2448,6 +3341,9 @@ class AdminOfficialPricesScreen extends StatefulWidget {
 }
 
 class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
+  // ✅ جديد — نص البحث المربوط فعلياً (كان حقل البحث زخرفياً بلا فلترة)
+  String _search = '';
+
   @override
   void initState() {
     super.initState();
@@ -2456,9 +3352,16 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
     });
   }
 
-  void _showAddOfficialPrice(BuildContext context) {
-    final qtyCtrl = TextEditingController(text: '1');
-    final priceCtrl = TextEditingController();
+  /// ✅ محدَّث — نافذة موحّدة إضافة/تعديل. تمرير [existing] يحوّلها لنافذة
+  /// تعديل (CatalogProvider.updateOfficialPrice)، مطابقةً لعنصر "تعديل"
+  /// الناقص سابقاً في مخطط حالات الاستخدام لـ"إدارة الأسعار الرسمية".
+  void _showOfficialPriceDialog(BuildContext context,
+      {OfficialPrice? existing}) {
+    final isEdit = existing != null;
+    final qtyCtrl = TextEditingController(
+        text: (existing?.quantity ?? 1).toStringAsFixed(0));
+    final priceCtrl = TextEditingController(
+        text: existing != null ? existing.price.toStringAsFixed(0) : '');
 
     // ✅ تحميل قوائم المنتجات والوحدات الحقيقية (إن لم تكن محمَّلة أصلاً)
     // قبل فتح النافذة، حتى تظهر القائمتان المنسدلتان مملوءتين فوراً.
@@ -2467,8 +3370,8 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
     if (productProvider.products.isEmpty) productProvider.loadProducts();
     if (catalogProvider.units.isEmpty) catalogProvider.loadUnits();
 
-    String? selectedProductId;
-    String? selectedUnitId;
+    String? selectedProductId = existing?.productId;
+    String? selectedUnitId = existing?.unitId;
 
     showDialog(
       context: context,
@@ -2484,9 +3387,10 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
-              title: const Text(
-                'إضافة سعر رسمي جديد',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              title: Text(
+                isEdit ? 'تعديل سعر رسمي' : 'إضافة سعر رسمي جديد',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
               content: SingleChildScrollView(
                 child: Column(
@@ -2605,22 +3509,36 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
                               .firstWhere((u) => u.id == selectedUnitId)
                               .name;
                           final navigator = Navigator.of(ctx);
-                          final ok = await context
-                              .read<CatalogProvider>()
-                              .addOfficialPrice(
-                                productId: selectedProductId!,
-                                productName: productName,
-                                unitId: selectedUnitId!,
-                                unitName: unitName,
-                                amount: qty,
-                                price: price,
-                              );
+                          final provider = context.read<CatalogProvider>();
+                          final ok = isEdit
+                              ? await provider.updateOfficialPrice(
+                                  existing.id,
+                                  productId: selectedProductId!,
+                                  productName: productName,
+                                  unitId: selectedUnitId!,
+                                  unitName: unitName,
+                                  amount: qty,
+                                  price: price,
+                                )
+                              : await provider.addOfficialPrice(
+                                  productId: selectedProductId!,
+                                  productName: productName,
+                                  unitId: selectedUnitId!,
+                                  unitName: unitName,
+                                  amount: qty,
+                                  price: price,
+                                );
                           navigator.pop();
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content:
-                                  Text(ok ? 'تمت الإضافة' : 'تعذّرت الإضافة'),
+                              content: Text(
+                                ok
+                                    ? (isEdit ? 'تم التعديل' : 'تمت الإضافة')
+                                    : (isEdit
+                                        ? 'تعذّر التعديل'
+                                        : 'تعذّرت الإضافة'),
+                              ),
                               backgroundColor:
                                   ok ? AppColors.success : AppColors.error,
                             ),
@@ -2630,7 +3548,7 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
                           minimumSize: const Size(0, 44),
                           padding: EdgeInsets.zero,
                         ),
-                        child: const Text('إضافة'),
+                        child: Text(isEdit ? 'حفظ' : 'إضافة'),
                       ),
                     ),
                   ],
@@ -2644,9 +3562,33 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
     );
   }
 
+  /// ✅ جديد — حذف سعر رسمي، مطابقةً لعنصر "حذف" الناقص سابقاً في نفس المخطط.
+  Future<void> _confirmDeleteOfficialPrice(OfficialPrice op) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'حذف السعر الرسمي',
+      message: 'هل تريد حذف السعر الرسمي لـ"${op.productName}" نهائياً؟',
+      confirmText: 'حذف',
+      icon: Icons.delete_outline,
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await context.read<CatalogProvider>().deleteOfficialPrice(op.id);
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(ok ? 'تم الحذف' : 'تعذّر الحذف'),
+      backgroundColor: ok ? AppColors.success : AppColors.error,
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<CatalogProvider>();
+    final officialPrices = _search.trim().isEmpty
+        ? catalog.officialPrices
+        : catalog.officialPrices
+            .where((op) => op.productName.contains(_search.trim()))
+            .toList();
     return Column(
       children: [
         _AdminGradientHeader(
@@ -2654,11 +3596,14 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
           subtitle: 'أدر الأسعار الرسمية للمنتجات',
           icon: Icons.description_outlined,
           actionLabel: 'إضافة سعر رسمي',
-          onAction: () => _showAddOfficialPrice(context),
+          onAction: () => _showOfficialPriceDialog(context),
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: WaffirSearchField(hint: 'ابحث عن منتج...'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: WaffirSearchField(
+            hint: 'ابحث عن منتج...',
+            onChanged: (v) => setState(() => _search = v),
+          ),
         ),
         const SizedBox(height: 12),
         Expanded(
@@ -2666,9 +3611,9 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
               ? const Center(child: CircularProgressIndicator())
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: catalog.officialPrices.length,
+                  itemCount: officialPrices.length,
                   itemBuilder: (ctx, i) {
-                    final op = catalog.officialPrices[i];
+                    final op = officialPrices[i];
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.symmetric(
@@ -2682,14 +3627,17 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
                       ),
                       child: Row(
                         children: [
-                          Text(
-                            op.productName,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                          Expanded(
+                            child: Text(
+                              op.productName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                          const Spacer(),
                           Text(op.unit, style: const TextStyle(fontSize: 12)),
                           const SizedBox(width: 4),
                           Text(
@@ -2705,19 +3653,23 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(
-                              Icons.description_outlined,
-                              size: 16,
-                              color: AppColors.primary,
-                            ),
+                          const SizedBox(width: 6),
+                          // ✅ جديد — أزرار تعديل/حذف، كانتا غائبتين تماماً
+                          // سابقاً رغم إدراجهما في مخطط حالات الاستخدام.
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined,
+                                size: 18, color: AppColors.textSecondary),
+                            onPressed: () =>
+                                _showOfficialPriceDialog(context, existing: op),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline,
+                                size: 18, color: AppColors.error),
+                            onPressed: () => _confirmDeleteOfficialPrice(op),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                           ),
                         ],
                       ),
@@ -2732,12 +3684,10 @@ class _AdminOfficialPricesScreenState extends State<AdminOfficialPricesScreen> {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ANALYTICS SCREEN
-// ✅ الأرقام الثلاثة العلوية من CatalogProvider.dashboardStats. الرسوم
-// البيانية أدناه تبقى توضيحية عمداً (بلا endpoint سلاسل بيانات زمنية حقيقي
-// بعد — موثّق في docs/API_ADDENDUM.md)، لكن أُعيد تصميمها بشكل احترافي:
-//   • رسم خطي: تعبئة متدرّجة، خطوط إرشادية، فقاعة القيمة الحالية، تسميات أيام.
-//   • رسم دائري (Donut): مركز يعرض النسبة الأكبر، Legend بنسب دقيقة.
-//   • رسم شريطي: قيمة واضحة فوق كل عمود، تدرّج لوني، خط أساس.
+// ✅ الأرقام الثلاثة العلوية أصبحت من CatalogProvider.dashboardStats بدل
+// أرقام ثابتة. الرسوم البيانية أدناه تبقى توضيحية عمداً — لا يوجد أي
+// endpoint موثّق حالياً يعيد سلاسل بيانات زمنية (chart series)، وهذا موثّق
+// بوضوح في docs/API_ADDENDUM.md كنقطة مفتوحة لمطوّر الـ backend.
 // ══════════════════════════════════════════════════════════════════════════════
 class AdminAnalyticsScreen extends StatefulWidget {
   const AdminAnalyticsScreen({super.key});
@@ -2805,20 +3755,96 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
                 isPositive: true,
               ),
               const SizedBox(height: 16),
-              _AnalyticsCard(
-                title: 'نشاط الأسعار',
-                noteText: 'رسم توضيحي — بانتظار endpoint سلاسل بيانات زمنية',
-                child: const _LineChartPlaceholder(),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceOf(context),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.borderOf(context)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 14,
+                          color: AppColors.textHintOf(context),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'رسم توضيحي — بانتظار endpoint سلاسل بيانات زمنية',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AppColors.textSecondaryOf(context),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'نشاط الأسعار',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _LineChartPlaceholder(),
+                  ],
+                ),
               ),
               const SizedBox(height: 14),
-              _AnalyticsCard(
-                title: 'توزيع الفئات',
-                child: const _PieChartPlaceholder(),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceOf(context),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.borderOf(context)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'توزيع الفئات',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _PieChartPlaceholder(),
+                  ],
+                ),
               ),
               const SizedBox(height: 14),
-              _AnalyticsCard(
-                title: 'المنتجات الأكثر نشاطاً',
-                child: const _BarChartPlaceholder(),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceOf(context),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.borderOf(context)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'المنتجات الأكثر نشاطاً',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _BarChartPlaceholder(),
+                  ],
+                ),
               ),
               const SizedBox(height: 20),
             ],
@@ -2829,406 +3855,181 @@ class _AdminAnalyticsScreenState extends State<AdminAnalyticsScreen> {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// ✅ جديد — بطاقة موحّدة لكل رسم بياني (عنوان + ملاحظة اختيارية + محتوى)
-// بدل تكرار نفس شكل الـ Container/Column ثلاث مرات بشكل غير متسق.
-// ══════════════════════════════════════════════════════════════════════════
-class _AnalyticsCard extends StatelessWidget {
-  final String title;
-  final String? noteText;
-  final Widget child;
-  const _AnalyticsCard(
-      {required this.title, this.noteText, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceOf(context),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderOf(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(title,
-                  style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimaryOf(context))),
-              if (noteText != null)
-                Tooltip(
-                  message: noteText!,
-                  child: Icon(Icons.info_outline,
-                      size: 15, color: AppColors.textHintOf(context)),
-                ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// LINE CHART — نشاط الأسعار
-// ══════════════════════════════════════════════════════════════════════════
 class _LineChartPlaceholder extends StatelessWidget {
-  const _LineChartPlaceholder();
-
-  static const _points = [300.0, 350.0, 400.0, 450.0, 460.0, 500.0, 700.0];
-  static const _dayLabels = [
-    'السبت',
-    'الأحد',
-    'الاثنين',
-    'الثلاثاء',
-    'الأربعاء',
-    'الخميس',
-    'اليوم'
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final isDark = AppColors.isDark(context);
-    final gridColor = AppColors.borderOf(context);
-    final textColor = AppColors.textSecondaryOf(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // ✅ فقاعة القيمة الحالية أعلى الرسم بدل ترك النقطة الأخيرة بلا تفسير
-        Row(
-          children: [
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color:
-                    AppColors.primary.withValues(alpha: isDark ? 0.2 : 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.trending_up,
-                      size: 14, color: AppColors.primary),
-                  const SizedBox(width: 4),
-                  Text('${_points.last.toStringAsFixed(0)} اليوم',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary)),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 150,
-          child: CustomPaint(
-            painter: _LineChartPainter(
-              points: _points,
-              lineColor: AppColors.primary,
-              gridColor: gridColor,
-              isDark: isDark,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: _dayLabels
-              .map((d) =>
-                  Text(d, style: TextStyle(fontSize: 10, color: textColor)))
-              .toList(),
-        ),
-      ],
+    final points = [300.0, 350.0, 400.0, 450.0, 460.0, 500.0, 700.0];
+    return SizedBox(
+      height: 160,
+      child: CustomPaint(painter: _LineChartPainter(points)),
     );
   }
 }
 
 class _LineChartPainter extends CustomPainter {
   final List<double> points;
-  final Color lineColor;
-  final Color gridColor;
-  final bool isDark;
-  _LineChartPainter({
-    required this.points,
-    required this.lineColor,
-    required this.gridColor,
-    required this.isDark,
-  });
+  _LineChartPainter(this.points);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final minY = points.reduce((a, b) => a < b ? a : b) * 0.85;
-    final maxY = points.reduce((a, b) => a > b ? a : b) * 1.1;
+    final paint = Paint()
+      ..color = AppColors.primary
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke;
 
-    // ── خطوط إرشادية أفقية ─────────────────────────────────────────────
-    final gridPaint = Paint()
-      ..color = gridColor.withValues(alpha: isDark ? 0.5 : 0.7)
-      ..strokeWidth = 1;
-    for (int i = 0; i <= 3; i++) {
-      final y = size.height * i / 3;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
+    final dotPaint = Paint()
+      ..color = AppColors.primary
+      ..style = PaintingStyle.fill;
 
-    // ── حساب نقاط الخط ────────────────────────────────────────────────
-    final offsets = <Offset>[];
+    final path = Path();
+    const minY = 200.0, maxY = 800.0;
+
     for (int i = 0; i < points.length; i++) {
       final x = (i / (points.length - 1)) * size.width;
       final y =
           size.height - ((points[i] - minY) / (maxY - minY)) * size.height;
-      offsets.add(Offset(x, y));
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+      canvas.drawCircle(Offset(x, y), 4, dotPaint);
     }
-
-    // ── تعبئة متدرّجة أسفل الخط ───────────────────────────────────────
-    final fillPath = Path()..moveTo(offsets.first.dx, size.height);
-    for (final o in offsets) {
-      fillPath.lineTo(o.dx, o.dy);
-    }
-    fillPath.lineTo(offsets.last.dx, size.height);
-    fillPath.close();
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          lineColor.withValues(alpha: isDark ? 0.35 : 0.22),
-          lineColor.withValues(alpha: 0),
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawPath(fillPath, fillPaint);
-
-    // ── الخط نفسه ─────────────────────────────────────────────────────
-    final linePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 2.6
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final linePath = Path()..moveTo(offsets.first.dx, offsets.first.dy);
-    for (final o in offsets.skip(1)) {
-      linePath.lineTo(o.dx, o.dy);
-    }
-    canvas.drawPath(linePath, linePaint);
-
-    // ── النقاط (النقطة الأخيرة مُبرزة) ───────────────────────────────
-    for (int i = 0; i < offsets.length; i++) {
-      final isLast = i == offsets.length - 1;
-      canvas.drawCircle(offsets[i], isLast ? 5.5 : 3,
-          Paint()..color = Colors.white);
-      canvas.drawCircle(
-        offsets[i],
-        isLast ? 5.5 : 3,
-        Paint()
-          ..color = lineColor
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = isLast ? 3 : 2,
-      );
-    }
+    canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(covariant _LineChartPainter oldDelegate) =>
-      oldDelegate.lineColor != lineColor || oldDelegate.isDark != isDark;
+  bool shouldRepaint(_) => false;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// PIE / DONUT CHART — توزيع الفئات
-// ══════════════════════════════════════════════════════════════════════════
 class _PieChartPlaceholder extends StatelessWidget {
-  const _PieChartPlaceholder();
-
-  static const _slices = [
-    (0.35, 'زيوت', AppColors.primary),
-    (0.20, 'سكريات', Colors.lightBlue),
-    (0.20, 'حبوب', Colors.blue),
-    (0.25, 'أخرى', AppColors.primaryLight),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final textColor = AppColors.textPrimaryOf(context);
-    final textSecondary = AppColors.textSecondaryOf(context);
-    final cardColor = AppColors.surfaceOf(context);
-
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        SizedBox(
-          width: 130,
-          height: 130,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              CustomPaint(
-                size: const Size(130, 130),
-                painter: _PieChartPainter(_slices, centerColor: cardColor),
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('${(_slices.first.$1 * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: textColor)),
-                  Text(_slices.first.$2,
-                      style: TextStyle(fontSize: 10.5, color: textSecondary)),
-                ],
-              ),
-            ],
-          ),
-        ),
         const SizedBox(width: 20),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: _slices
-                .map((s) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                                color: s.$3, shape: BoxShape.circle),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(s.$2,
-                                style:
-                                    TextStyle(fontSize: 12.5, color: textColor)),
-                          ),
-                          Text('${(s.$1 * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: textColor)),
-                        ],
-                      ),
-                    ))
-                .toList(),
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _Legend('زيوت (35%)', AppColors.primary),
+            const SizedBox(height: 4),
+            const _Legend('سكريات (20%)', Colors.lightBlue),
+            const SizedBox(height: 4),
+            _Legend('أخرى', Colors.blue.shade200),
+          ],
+        ),
+        const SizedBox(width: 16),
+        SizedBox(
+          width: 120,
+          height: 120,
+          child: CustomPaint(painter: _PieChartPainter()),
         ),
       ],
     );
   }
 }
 
-class _PieChartPainter extends CustomPainter {
-  final List<(double, String, Color)> slices;
-  final Color centerColor;
-  _PieChartPainter(this.slices, {required this.centerColor});
+class _Legend extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _Legend(this.label, this.color);
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontSize: 12)),
+        ],
+      );
+}
 
+class _PieChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
+    final slices = [
+      (0.35, AppColors.primary),
+      (0.20, Colors.lightBlue),
+      (0.20, Colors.blue.shade200),
+      (0.25, AppColors.primaryLight),
+    ];
     double start = -3.14159 / 2;
     for (final slice in slices) {
       final sweep = slice.$1 * 2 * 3.14159;
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
         start,
-        sweep - 0.04, // فجوة بصرية صغيرة بين كل قطاع والآخر
+        sweep,
         true,
         Paint()
-          ..color = slice.$3
+          ..color = slice.$2
           ..style = PaintingStyle.fill,
       );
       start += sweep;
     }
-    // ✅ ثقب الدونات بلون البطاقة (لا أبيض ثابت) ليتوافق مع الوضع الداكن
-    canvas.drawCircle(center, radius * 0.58, Paint()..color = centerColor);
+    canvas.drawCircle(
+      center,
+      radius * 0.5,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _PieChartPainter oldDelegate) =>
-      oldDelegate.centerColor != centerColor;
+  bool shouldRepaint(_) => false;
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// BAR CHART — المنتجات الأكثر نشاطاً
-// ══════════════════════════════════════════════════════════════════════════
 class _BarChartPlaceholder extends StatelessWidget {
-  const _BarChartPlaceholder();
-
-  static const _bars = [
-    ('رز أبيض', 156),
-    ('زيت ذرة', 130),
-    ('طحين', 105),
-    ('سكر', 95),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    final maxVal = _bars.map((b) => b.$2).reduce((a, b) => a > b ? a : b);
-    final textColor = AppColors.textSecondaryOf(context);
-    final gridColor = AppColors.borderOf(context);
+    final bars = [
+      ('رز أبيض', 156),
+      ('زيت ذرة', 130),
+      ('طحين', 105),
+      ('سكر', 95),
+    ];
+    final maxVal = bars.map((b) => b.$2).reduce((a, b) => a > b ? a : b);
 
     return Column(
       children: [
         SizedBox(
           height: 140,
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: _bars.map((b) {
-              final barHeight = 108 * b.$2 / maxVal;
-              return Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('${b.$2}',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimaryOf(context))),
-                  const SizedBox(height: 4),
-                  Container(
-                    width: 36,
-                    height: barHeight,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          AppColors.primary,
-                          AppColors.primary.withValues(alpha: 0.65),
-                        ],
+            children: bars
+                .map(
+                  (b) => Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 120 * b.$2 / maxVal,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(6),
+                            topRight: Radius.circular(6),
+                          ),
+                        ),
                       ),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(8),
-                        topRight: Radius.circular(8),
-                      ),
-                    ),
+                    ],
                   ),
-                ],
-              );
-            }).toList(),
+                )
+                .toList(),
           ),
         ),
-        Container(height: 1, color: gridColor),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: _bars
-              .map((b) => SizedBox(
-                    width: 60,
-                    child: Text(b.$1,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11, color: textColor)),
-                  ))
+          children: bars
+              .map((b) => Text(b.$1, style: const TextStyle(fontSize: 11)))
               .toList(),
         ),
       ],
@@ -3435,20 +4236,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   emoji: '🔐',
                 ),
               ),
-              _AdminCard(
-                child: _tappableRow(
-                  onTap: () => showComingSoonDialog(
-                    context,
-                    title: 'سجل النشاط',
-                    message:
-                        'سجل النشاط يعرض كل الإجراءات التي قام بها المسؤولون، وهو '
-                        'يعتمد بالكامل على بيانات الخادم، لذا سيظهر فور ربط التطبيق '
-                        'بالـ backend.',
-                  ),
-                  label: 'سجل النشاط',
-                  emoji: '📋',
-                ),
-              ),
               const _AdminSectionHeader('إعدادات الحساب'),
               _AdminCard(
                 child: _tappableRow(
@@ -3458,16 +4245,22 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                 ),
               ),
               _AdminCard(
+                // ══════════════════════════════════════════════════════
+                // ✅ إصلاح جوهري — كانت "صلاحيات المسؤولين" مجرد نافذة
+                // "قيد التطوير" بلا أي وظيفة فعلية. مخطط حالات الاستخدام
+                // يُدرج "عرض المسؤولين" كحالة استخدام مستقلة كاملة ضمن
+                // الإعدادات، مع extend إلى: إضافة/تعديل/بحث/حذف مسؤول.
+                // الآن تُفتح شاشة AdminAdminsScreen المخصّصة بالكامل لهذا
+                // الغرض (راجع أسفل الملف).
+                // ══════════════════════════════════════════════════════
                 child: _tappableRow(
-                  onTap: () => showComingSoonDialog(
+                  onTap: () => Navigator.push(
                     context,
-                    title: 'صلاحيات المسؤولين',
-                    message:
-                        'إدارة أدوار وصلاحيات المسؤولين المتعددين تتطلب نظام صلاحيات '
-                        'على الخادم، وستكون متاحة بعد ربط التطبيق بالـ backend.',
+                    MaterialPageRoute(
+                        builder: (_) => const AdminAdminsScreen()),
                   ),
-                  label: 'صلاحيات المسؤولين',
-                  emoji: '⚙️',
+                  label: 'إدارة المسؤولين',
+                  emoji: '🛡️',
                 ),
               ),
               _AdminCard(
@@ -3694,4 +4487,396 @@ class _AdminCard extends StatelessWidget {
         ),
         child: child,
       );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ✅ جديد بالكامل — ADMINS SCREEN ("عرض المسؤولين")
+// حالة استخدام مستقلة كانت غائبة تماماً عن التطبيق رغم وجودها صراحة في
+// مخطط حالات الاستخدام ضمن قسم الإعدادات، مع extend إلى: إضافة مسؤول،
+// تعديل معلومات مسؤول، البحث عن مسؤول، حذف مسؤول.
+//
+// ✅ ملاحظة تصميمية مهمة: جدول User في قاعدة البيانات الفعلية
+// (Waffir_Database.txt) لا يحتوي جدولاً منفصلاً للمسؤولين — الأدوار كلها
+// أعمدة role على نفس جدول User. لذا "المسؤولون" هنا هم ببساطة مستخدمون
+// بقيمة role مرتفعة (راجع UserModel._parseRole في models.dart)، وتُبنى
+// هذه الشاشة فوق نفس AdminUsersProvider المستخدم في "إدارة المستخدمين"
+// (دون طلب شبكة منفصل):
+//   • عرض  → AdminUsersProvider.admins (مُشتقّة من users المُحمَّلة)
+//   • بحث  → فلترة محلية على الاسم/الهاتف
+//   • إضافة → AdminUsersProvider.createUser(role: 'admin') — إنشاء حساب
+//             مسؤول جديد مباشرة من هنا
+//   • تعديل → AdminUsersProvider.updateUser (تعديل الاسم)
+//   • حذف  → تُفسَّر هنا كـ"إزالة صلاحية الإدارة" (إعادة الدور إلى
+//             'user' عبر setRole) وليس حذف الحساب بالكامل، لتفادي حذف
+//             مستخدم قد يملك محتوى مرتبطاً به (أسعار، بلاغات...) بصورة
+//             لا رجعة فيها من نافذة لا علاقة موضوعها بذلك مباشرة. إن أراد
+//             ohayo لاحقاً حذفاً فعلياً للحساب بدل التخفيض، يمكن استبدال
+//             الاستدعاء بسهولة بـ AdminUsersProvider.deleteUser.
+// ══════════════════════════════════════════════════════════════════════════════
+class AdminAdminsScreen extends StatefulWidget {
+  const AdminAdminsScreen({super.key});
+
+  @override
+  State<AdminAdminsScreen> createState() => _AdminAdminsScreenState();
+}
+
+class _AdminAdminsScreenState extends State<AdminAdminsScreen> {
+  String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = context.read<AdminUsersProvider>();
+      if (provider.users.isEmpty) provider.loadUsers();
+      final catalog = context.read<CatalogProvider>();
+      if (catalog.locations.isEmpty) catalog.loadLocations();
+    });
+  }
+
+  void _showEditAdmin(UserModel admin) {
+    final nameCtrl = TextEditingController(text: admin.name);
+    showDialog(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('تعديل معلومات المسؤول',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('الاسم الكامل', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameCtrl,
+                textDirection: TextDirection.rtl,
+              ),
+            ],
+          ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        padding: EdgeInsets.zero),
+                    child: const Text('إلغاء'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (nameCtrl.text.trim().isEmpty) return;
+                      final navigator = Navigator.of(ctx);
+                      final ok = await context
+                          .read<AdminUsersProvider>()
+                          .updateUser(admin.id, name: nameCtrl.text.trim());
+                      navigator.pop();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content:
+                            Text(ok ? 'تم تحديث البيانات' : 'تعذّر التحديث'),
+                        backgroundColor:
+                            ok ? AppColors.success : AppColors.error,
+                      ));
+                    },
+                    style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        padding: EdgeInsets.zero),
+                    child: const Text('حفظ'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemoveAdmin(UserModel admin) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'حذف مسؤول',
+      message:
+          'هل تريد إزالة "${admin.name}" من قائمة المسؤولين؟ سيعود حسابه إلى صلاحية مستخدم عادي.',
+      confirmText: 'حذف',
+      icon: Icons.person_remove_outlined,
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok =
+        await context.read<AdminUsersProvider>().setRole(admin.id, 'user');
+    if (!mounted) return;
+    messenger.showSnackBar(SnackBar(
+      content: Text(ok ? 'تم حذف المسؤول' : 'تعذّر تنفيذ الإجراء'),
+      backgroundColor: ok ? AppColors.success : AppColors.error,
+    ));
+  }
+
+  void _showAddAdmin(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    String? selectedBlock;
+    String? selectedArea;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text('إضافة مسؤول جديد',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('الاسم الكامل', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: nameCtrl, textDirection: TextDirection.rtl),
+                  const SizedBox(height: 14),
+                  const Text('رقم الهاتف', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      textDirection: TextDirection.ltr),
+                  const SizedBox(height: 14),
+                  const Text('كلمة المرور المبدئية',
+                      style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  TextField(controller: passwordCtrl, obscureText: true),
+                  const SizedBox(height: 14),
+                  const Text('الكتلة والمنطقة', style: TextStyle(fontSize: 13)),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => showLocationPickerSheet(
+                      context,
+                      currentBlock: selectedBlock ?? '',
+                      currentArea: selectedArea ?? '',
+                      onSelect: (block, area) => setDialogState(() {
+                        selectedBlock = block;
+                        selectedArea = area;
+                      }),
+                    ),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 14),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.borderOf(ctx)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        selectedArea == null
+                            ? 'اختر الكتلة الإدارية والمنطقة'
+                            : AleppoBlocks.displayLabel(
+                                block: selectedBlock!, area: selectedArea!),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        if (nameCtrl.text.trim().isEmpty ||
+                            phoneCtrl.text.trim().isEmpty ||
+                            passwordCtrl.text.trim().length < 6 ||
+                            selectedArea == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('يرجى تعبئة كل الحقول بشكل صحيح'),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                          return;
+                        }
+                        final locationId = context
+                            .read<CatalogProvider>()
+                            .locationIdForArea(selectedArea!);
+                        final navigator = Navigator.of(ctx);
+                        final ok =
+                            await context.read<AdminUsersProvider>().createUser(
+                                  name: nameCtrl.text.trim(),
+                                  phone: phoneCtrl.text.trim(),
+                                  password: passwordCtrl.text,
+                                  locationId: locationId ?? '',
+                                  role: 'admin',
+                                );
+                        navigator.pop();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content:
+                              Text(ok ? 'تمت إضافة المسؤول' : 'تعذّرت الإضافة'),
+                          backgroundColor:
+                              ok ? AppColors.success : AppColors.error,
+                        ));
+                      },
+                      style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero),
+                      child: const Text('إضافة'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<AdminUsersProvider>();
+    final admins = _search.trim().isEmpty
+        ? provider.admins
+        : provider.admins
+            .where((a) =>
+                a.name.contains(_search.trim()) ||
+                a.phone.contains(_search.trim()))
+            .toList();
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('إدارة المسؤولين'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_forward_ios, size: 18),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Column(
+          children: [
+            _AdminGradientHeader(
+              title: 'عرض المسؤولين',
+              subtitle: 'أدر حسابات المسؤولين وصلاحياتهم',
+              icon: Icons.shield_outlined,
+              actionLabel: 'إضافة مسؤول',
+              onAction: () => _showAddAdmin(context),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: WaffirSearchField(
+                hint: 'ابحث عن اسم أو رقم هاتف مسؤول...',
+                onChanged: (v) => setState(() => _search = v),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: provider.isLoading && provider.users.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : admins.isEmpty
+                      ? Center(
+                          child: Text('لا يوجد مسؤولون مطابقون',
+                              style: TextStyle(
+                                  color: AppColors.textSecondaryOf(context))),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: admins.length,
+                          itemBuilder: (ctx, i) {
+                            final a = admins[i];
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceOf(context),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: AppColors.borderOf(context)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color:
+                                          Colors.purple.withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.shield_outlined,
+                                        size: 16, color: Colors.purple),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(a.name,
+                                            style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600)),
+                                        Text(a.phone,
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                color:
+                                                    AppColors.textSecondaryOf(
+                                                        context))),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined,
+                                        size: 18,
+                                        color: AppColors.textSecondary),
+                                    onPressed: () => _showEditAdmin(a),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(
+                                        Icons.person_remove_outlined,
+                                        size: 18,
+                                        color: AppColors.error),
+                                    onPressed: () => _confirmRemoveAdmin(a),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

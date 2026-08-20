@@ -37,15 +37,65 @@ class AdminUserService {
 
   /// PATCH /admin/users/{id}/role — ترقية/تخفيض صلاحية مستخدم
   ///
-  /// ⚠️ ملاحظة توضيحية (بند غير محسوم بعد — راجع البند رقم 8 في تقرير
-  /// جاهزية الباك): عمود User.role في قاعدة البيانات الفعلي من نوع tinyint
-  /// مقيّد بالقيم (0, 1, 2)، بينما نُرسل هنا حالياً النص 'admin'/'user'
-  /// (قادماً من AdminUsersScreen). هذا يفترض أن طبقة الـ API لدى الباك
-  /// تقبل نصاً وتُترجمه داخلياً إلى الرقم المناسب — وهو تصميم شائع ومقبول،
-  /// لكنه يحتاج تأكيداً صريحاً من مطوّر الباك قبل الاعتماد النهائي. إن تبيّن
-  /// أن الـ endpoint يتوقع رقماً مباشراً بدل نص، يكفي تعديل نقطة واحدة فقط
-  /// هنا (تحويل 'admin' → 1 و'user' → 2 مثلاً) دون المساس بأي شاشة أخرى.
+  /// ✅ محدَّث — بعد فحص Waffir_Database.txt: عمود User.role هو tinyint
+  /// بقيمة افتراضية 0 (راجع التوضيح الكامل في models.dart._parseRole).
+  /// نُرسل الآن القيمة الرقمية الفعلية مباشرة (عبر UserModel.roleToInt)
+  /// بدل النص 'admin'/'user'، لتفادي أي افتراض غير مؤكد بأن طبقة الـ API
+  /// تترجم النص داخلياً.
   Future<void> setUserRole(String id, String role) {
-    return _api.patch<void>('/admin/users/$id/role', data: {'role': role});
+    return _api.patch<void>('/admin/users/$id/role',
+        data: {'role': UserModel.roleToInt(role)});
+  }
+
+  /// POST /admin/users — ✅ جديد — إضافة مستخدم جديد مباشرة من لوحة الإدارة
+  /// (بدل مسار التسجيل الذاتي عبر OTP)، مطابقةً لعنصر "إضافة" ضمن الأفعال
+  /// الموحّدة في مخطط حالات الاستخدام لـ"إدارة المستخدمين". role يُرسَل
+  /// كرقم مباشر (0 = مستخدم عادي افتراضياً) مطابقةً لعمود User.role tinyint.
+  Future<UserModel> createUser({
+    required String name,
+    required String phone,
+    required String password,
+    required String locationId,
+    String role = 'user',
+  }) {
+    return _api.post<UserModel>(
+      '/admin/users',
+      data: {
+        'name': name,
+        'phone_number': phone,
+        'password': password,
+        'location_id': locationId,
+        'role': UserModel.roleToInt(role),
+      },
+      fromJson: (json) =>
+          UserModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
+  /// DELETE /admin/users/{id} — ✅ جديد — حذف مستخدم نهائياً (استخدام إداري)
+  /// مطابقةً لعنصر "حذف" ضمن الأفعال الخمسة الموحّدة (عرض/إضافة/تعديل/
+  /// بحث/حذف) التي يُدرجها مخطط حالات الاستخدام لكل شاشة إدارية، بما فيها
+  /// "إدارة المستخدمين".
+  Future<void> deleteUser(String id) {
+    return _api.delete<void>('/admin/users/$id');
+  }
+
+  /// PUT /admin/users/{id} — ✅ جديد — تعديل بيانات مستخدم (الاسم والموقع)
+  /// من لوحة الإدارة، مطابقةً لعنصر "تعديل" في نفس مخطط حالات الاستخدام.
+  Future<UserModel> updateUser(
+    String id, {
+    required String name,
+    String? locationId,
+  }) {
+    return _api.put<UserModel>(
+      '/admin/users/$id',
+      data: {
+        'name': name,
+        if (locationId != null && locationId.isNotEmpty)
+          'location_id': locationId,
+      },
+      fromJson: (json) =>
+          UserModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
   }
 }

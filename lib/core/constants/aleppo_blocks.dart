@@ -208,10 +208,10 @@ class AleppoBlocks {
     return null;
   }
 
-  /// نص العرض الكامل: "المنطقة — الكتلة الأولى"
+  /// نص العرض الكامل: "الكتلة الأولى — المنطقة"
   static String displayLabel({required String block, required String area}) {
     if (block.isEmpty) return area;
     if (area.isEmpty) return block;
-    return '$area — $block';
+    return '$block — $area';
   }
 }

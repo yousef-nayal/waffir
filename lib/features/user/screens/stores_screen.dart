@@ -1,12 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/mock_data.dart';
 import '../../../core/utils/app_provider.dart';
 import '../../../core/constants/aleppo_blocks.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../models/models.dart';
 
+// ══════════════════════════════════════════════════════════════════════════
+// STORES SCREEN
+// ✅ إصلاح جوهري — كانت هذه الشاشة الوحيدة في كامل التطبيق التي تقرأ
+// MockData.stores مباشرة (import '../../../core/utils/mock_data.dart')
+// بصرف النظر تماماً عن قيمة AppConfig.useMockData، رغم وجود StoreProvider
+// كامل وجاهز (loadStores مع دعم البحث والفلترة عبر الخادم، بالإضافة إلى
+// createStore/setVerified/updateStore/deleteStore المُستخدمة أصلاً في
+// add_store_screen.dart ولوحة الإدارة). النتيجة العملية للخطأ السابق:
+//   • حقل البحث كان يُصفّي محلياً فقط الـ7 متاجر الوهمية الثابتة — لا
+//     يستدعي أي endpoint إطلاقاً مهما كتب المستخدم.
+//   • عند تبديل AppConfig.useMockData إلى false (ربط الـ backend الحقيقي)،
+//     كانت هذه الشاشة تحديداً ستبقى تعرض نفس الـ7 متاجر الوهمية إلى الأبد،
+//     بينما كل شاشة أخرى في التطبيق تتحول فعلياً للبيانات الحقيقية — وهو
+//     تناقض كان سيصعب اكتشافه لاحقاً.
+//
+// الإصلاح: الشاشة الآن StoreProvider-based بالكامل:
+//   • initState يستدعي StoreProvider.loadStores() (يتحول تلقائياً بين
+//     MockData والـ backend الحقيقي حسب AppConfig.useMockData، تماماً كبقية
+//     مزودي التطبيق).
+//   • حقل البحث مربوط فعلياً بـ StoreProvider.loadStores(search: v) — طلب
+//     شبكة حقيقي في الوضع الحقيقي.
+//   • فلترة "الكتلة الإدارية"/"الحي" تبقى محلية على القائمة المُحمَّلة (بنفس
+//     منطق AdminStoresScreen في admin_shell.dart تماماً)، لأن هذا التصنيف
+//     مُشتق من حقل area عبر AleppoBlocks.blockOfArea ولا يحتاج طلب شبكة
+//     منفصل لكل كتلة.
+//   • أُضيفت حالتا تحميل (CircularProgressIndicator) وخطأ صريحة (نفس نمط
+//     ProductsScreen)، بدل الاعتماد الصامت على بيانات محلية دائماً متوفرة.
+//
+// ✅ بلا أي تغيير آخر في الشكل أو السلوك المرئي: نفس الرأس المتدرّج، نفس
+// أزرار الثيم/الإضافة، نفس بطاقة المتجر ونافذة التفاصيل السفلية بالضبط.
+// ══════════════════════════════════════════════════════════════════════════
 class StoresScreen extends StatefulWidget {
   const StoresScreen({super.key});
 
@@ -18,6 +48,20 @@ class _StoresScreenState extends State<StoresScreen> {
   String _blockFilter = 'الكل';
   String _areaFilter = 'الكل';
   String _search = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ جديد — تحميل قائمة المتاجر الحقيقية (أو الوهمية في وضع العرض
+    // التجريبي) عند فتح الشاشة، بنفس نمط بقية شاشات التطبيق
+    // (ProductsScreen.initState، AddPriceScreen.initState...).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final storeProvider = context.read<StoreProvider>();
+      if (storeProvider.stores.isEmpty) {
+        storeProvider.loadStores();
+      }
+    });
+  }
 
   List<String> get _areasOfSelectedBlock {
     if (_blockFilter == 'الكل') return const [];
@@ -33,7 +77,12 @@ class _StoresScreenState extends State<StoresScreen> {
     final surface = AppColors.surfaceOf(context);
     final border = AppColors.borderOf(context);
 
-    final stores = MockData.stores.where((s) {
+    // ✅ محدَّث — المصدر الآن StoreProvider.stores (حقيقي/وهمي حسب
+    // AppConfig.useMockData) بدل MockData.stores المباشرة. البحث النصي يبقى
+    // كفلتر إضافي محلي فوري أثناء الكتابة (قبل وصول رد الخادم)، بالإضافة
+    // إلى الطلب الفعلي المُرسَل عبر onChanged أدناه.
+    final storeProvider = context.watch<StoreProvider>();
+    final stores = storeProvider.stores.where((s) {
       final storeBlock = AleppoBlocks.blockOfArea(s.area)?.name;
       final matchesBlock = _blockFilter == 'الكل' || storeBlock == _blockFilter;
       final matchesArea = _areaFilter == 'الكل' || s.area == _areaFilter;
@@ -75,12 +124,11 @@ class _StoresScreenState extends State<StoresScreen> {
                               fontSize: 22,
                               fontWeight: FontWeight.w700)),
                       // ══════════════════════════════════════════════════
-                      // ✅ جديد — مجموعة أيقونات أقصى اليسار: زر "إضافة
-                      // متجر" وزر تبديل الثيم معاً. بما أن أول عنصر في
-                      // children من Row يظهر في أقصى اليمين ضمن RTL، وضع
-                      // زر الثيم أولاً ثم زر الإضافة يجعل زر الإضافة يظهر
-                      // في الطرف الأبعد (أقصى يسار الشاشة كاملة)، وهو موضع
-                      // مناسب لإجراء "إضافة" بارز عن باقي الأيقونات الثانوية.
+                      // ✅ مجموعة أيقونات أقصى اليسار: زر "إضافة متجر" وزر
+                      // تبديل الثيم معاً. أول عنصر في children من Row يظهر
+                      // في أقصى اليمين ضمن RTL، فوضع زر الثيم أولاً ثم زر
+                      // الإضافة يجعل زر الإضافة يظهر في الطرف الأبعد (أقصى
+                      // يسار الشاشة كاملة).
                       // ══════════════════════════════════════════════════
                       Align(
                         alignment: Alignment.centerLeft,
@@ -105,7 +153,7 @@ class _StoresScreenState extends State<StoresScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // ✅ جديد — زر "إضافة متجر"، ينقل المستخدم إلى
+                            // زر "إضافة متجر" — ينقل المستخدم إلى
                             // AddStoreScreen حيث يُدخل اسم المتجر، ويختار
                             // الكتلة الإدارية والمنطقة بنفس آلية "إضافة سعر"
                             // (حقل واحد يفتح منتقي الموقع الموحّد)، ثم
@@ -136,7 +184,18 @@ class _StoresScreenState extends State<StoresScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
-                onChanged: (v) => setState(() => _search = v),
+                // ══════════════════════════════════════════════════════
+                // ✅ إصلاح جوهري — الآن يُحدَّث الفلتر المحلي فوراً (تجربة
+                // استخدام سلسة أثناء الكتابة) ويُرسَل طلب بحث فعلي عبر
+                // StoreProvider.loadStores(search: v) في نفس الوقت، بنفس
+                // نمط ProductsScreen.WaffirSearchField أعلاه في هذا الملف
+                // وProductsScreen في products_screen.dart. سابقاً كان
+                // onChanged يُحدِّث فقط setState محلياً بلا أي طلب شبكة.
+                // ══════════════════════════════════════════════════════
+                onChanged: (v) {
+                  setState(() => _search = v);
+                  context.read<StoreProvider>().loadStores(search: v);
+                },
                 style: TextStyle(color: textPrimary),
                 decoration: InputDecoration(
                   hintText: 'ابحث عن متجر...',
@@ -243,17 +302,54 @@ class _StoresScreenState extends State<StoresScreen> {
               ),
             ],
             const SizedBox(height: 12),
+            // ══════════════════════════════════════════════════════════
+            // ✅ جديد — حالات تحميل/خطأ/فارغ صريحة، بنفس نمط ProductsScreen
+            // في products_screen.dart، بدل الاعتماد الصامت على أن البيانات
+            // متوفرة دائماً محلياً كما كان الحال مع MockData.
+            // ══════════════════════════════════════════════════════════
             Expanded(
-              child: stores.isEmpty
-                  ? Center(
-                      child: Text('لا توجد متاجر',
-                          style: TextStyle(
-                              color: AppColors.textSecondaryOf(context))))
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: stores.length,
-                      itemBuilder: (ctx, i) => _StoreCard(store: stores[i]),
-                    ),
+              child: storeProvider.isLoading && storeProvider.stores.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : storeProvider.state == LoadingState.error &&
+                          storeProvider.stores.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.error_outline,
+                                  size: 32, color: AppColors.error),
+                              const SizedBox(height: 8),
+                              Text(
+                                  storeProvider.errorMessage ??
+                                      'تعذّر تحميل المتاجر',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color:
+                                          AppColors.textSecondaryOf(context))),
+                              const SizedBox(height: 10),
+                              OutlinedButton.icon(
+                                onPressed: () => context
+                                    .read<StoreProvider>()
+                                    .loadStores(search: _search),
+                                icon: const Icon(Icons.refresh, size: 16),
+                                label: const Text('إعادة المحاولة'),
+                              ),
+                            ],
+                          ),
+                        )
+                      : stores.isEmpty
+                          ? Center(
+                              child: Text('لا توجد متاجر',
+                                  style: TextStyle(
+                                      color:
+                                          AppColors.textSecondaryOf(context))))
+                          : ListView.builder(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              itemCount: stores.length,
+                              itemBuilder: (ctx, i) =>
+                                  _StoreCard(store: stores[i]),
+                            ),
             ),
           ],
         ),

@@ -71,6 +71,29 @@ class StoreService {
     return _api.patch<void>('/stores/$id/verify', data: {'is_verified': verified});
   }
 
+  /// PUT /stores/{id} — ✅ جديد — تعديل بيانات متجر (استخدام إداري)،
+  /// مطابقةً لعنصر "تعديل" ضمن الأفعال الخمسة الموحّدة التي يُدرجها مخطط
+  /// حالات الاستخدام لـ"إدارة المتاجر". locationId اختياري (لا يُرسَل إن
+  /// لم يتغيّر الموقع).
+  Future<StoreModel> updateStore(
+    String id, {
+    required String name,
+    required String address,
+    String? locationId,
+  }) {
+    return _api.put<StoreModel>(
+      '/stores/$id',
+      data: {
+        'name': name,
+        'address': address,
+        if (locationId != null && locationId.isNotEmpty)
+          'location_id': locationId,
+      },
+      fromJson: (json) =>
+          StoreModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
   /// DELETE /stores/{id} — (استخدام إداري)
   Future<void> deleteStore(String id) {
     return _api.delete<void>('/stores/$id');

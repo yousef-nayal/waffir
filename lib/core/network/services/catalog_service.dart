@@ -53,6 +53,35 @@ class CatalogService {
     );
   }
 
+  /// DELETE /official-prices/{id} — ✅ جديد — مطابقةً لعنصر "حذف" ضمن
+  /// الأفعال الموحّدة التي يُدرجها مخطط حالات الاستخدام لـ"إدارة الأسعار
+  /// الرسمية".
+  Future<void> deleteOfficialPrice(String id) {
+    return _api.delete<void>('/official-prices/$id');
+  }
+
+  /// PUT /official-prices/{id} — ✅ جديد — تعديل سعر رسمي موجود (استخدام
+  /// إداري)، مطابقةً لعنصر "تعديل" في نفس المخطط.
+  Future<OfficialPrice> updateOfficialPrice(
+    String id, {
+    required String productId,
+    required String unitId,
+    required double amount,
+    required double price,
+  }) {
+    return _api.put<OfficialPrice>(
+      '/official-prices/$id',
+      data: {
+        'product_id': productId,
+        'unit_id': unitId,
+        'amount': amount,
+        'price': price,
+      },
+      fromJson: (json) => OfficialPrice.fromJson(
+          (json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
   /// GET /official-prices/{id}/history — ✅ جديد
   /// سجل تغييرات السعر الرسمي لمادة معيّنة عبر الزمن، مرتباً حسب تاريخ
   /// التغيير. يُتوقَّع من الـ backend إرجاع مصفوفة بهذا الشكل:
@@ -89,6 +118,18 @@ class CatalogService {
     );
   }
 
+  /// PUT /units/{id} — ✅ جديد — تعديل اسم وحدة موجودة (كانت هذه العملية
+  /// معطَّلة سابقاً بنافذة "قيد التطوير" لعدم وجود endpoint موثّق؛ أصبح
+  /// موثّقاً الآن مطابقةً لعنصر "تعديل" في مخطط حالات الاستخدام).
+  Future<UnitModel> updateUnit(String id, String name) {
+    return _api.put<UnitModel>(
+      '/units/$id',
+      data: {'name': name},
+      fromJson: (json) =>
+          UnitModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
   Future<void> deleteUnit(String id) => _api.delete<void>('/units/$id');
 
   // ── العلامات التجارية ──────────────────────────────────────────────
@@ -105,6 +146,17 @@ class CatalogService {
   Future<BrandModel> createBrand(String name) {
     return _api.post<BrandModel>(
       '/brands',
+      data: {'name': name},
+      fromJson: (json) =>
+          BrandModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
+  /// PUT /brands/{id} — ✅ جديد — تعديل اسم علامة تجارية موجودة (نفس منطق
+  /// updateUnit أعلاه).
+  Future<BrandModel> updateBrand(String id, String name) {
+    return _api.put<BrandModel>(
+      '/brands/$id',
       data: {'name': name},
       fromJson: (json) =>
           BrandModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
@@ -138,6 +190,28 @@ class CatalogService {
       fromJson: (json) => LocationModel.fromJson(
           (json as Map<String, dynamic>)['data'] ?? json),
     );
+  }
+
+  /// PUT /locations/{id} — ✅ جديد — تعديل موقع/حي موجود (استخدام إداري)،
+  /// مطابقةً لعنصر "تعديل" في مخطط حالات الاستخدام لـ"إدارة المواقع والكتل".
+  Future<LocationModel> updateLocation(
+    String id, {
+    required String sector,
+    required String area,
+    required String landmark,
+  }) {
+    return _api.put<LocationModel>(
+      '/locations/$id',
+      data: {'sector': sector, 'area': area, 'landmark': landmark},
+      fromJson: (json) => LocationModel.fromJson(
+          (json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
+  /// DELETE /locations/{id} — ✅ جديد — حذف موقع/حي، مطابقةً لعنصر "حذف"
+  /// في نفس المخطط.
+  Future<void> deleteLocation(String id) {
+    return _api.delete<void>('/locations/$id');
   }
 
   // ── لوحة الإحصائيات الإدارية ───────────────────────────────────────

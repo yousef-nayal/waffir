@@ -551,7 +551,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 // ══════════════════════════════════════════════════════════════════════════
 
 /// ✅ جديد — نتيجة النافذة: نوع البلاغ + نص توضيحي اختياري (إجباري فقط
-/// عند type == 'other').
+/// عند type == ReportType.wrongInfo، مطابقةً لقيد الـ CHECK الفعلي في
+/// قاعدة البيانات الذي يسمح بـ description حصراً مع هذا النوع).
 class _ReportReason {
   final String type;
   final String? note;
@@ -565,11 +566,19 @@ class _ReportOptionData {
   const _ReportOptionData(this.value, this.label, this.icon);
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// ✅ إصلاح جوهري — القيم الثلاث الحصرية الفعلية لعمود Report.type بقاعدة
+// البيانات (راجع ReportType في models.dart وWaffir_Database.txt)، بدل 4
+// مفاتيح إنجليزية داخلية سابقاً لم تكن تطابق قيد الـ CHECK في القاعدة
+// الحقيقية إطلاقاً (أي بلاغ قديم كان سيُرفَض فوراً من الخادم الحقيقي).
+// ══════════════════════════════════════════════════════════════════════════
 const List<_ReportOptionData> _reportOptions = [
-  _ReportOptionData('wrong_price', 'سعر غير صحيح', Icons.price_change_outlined),
-  _ReportOptionData('outdated', 'سعر قديم', Icons.history_toggle_off),
-  _ReportOptionData('duplicate', 'تكرار', Icons.copy_all_outlined),
-  _ReportOptionData('other', 'أخرى', Icons.more_horiz_outlined),
+  _ReportOptionData(
+      ReportType.overpriced, 'سعر مبالغ فيه', Icons.warning_amber_outlined),
+  _ReportOptionData(
+      ReportType.wrongPrice, 'سعر غير صحيح', Icons.price_change_outlined),
+  _ReportOptionData(
+      ReportType.wrongInfo, 'معلومات غير صحيحة', Icons.info_outline),
 ];
 
 class _ReportDialog extends StatefulWidget {
@@ -584,7 +593,10 @@ class _ReportDialogState extends State<_ReportDialog> {
   final _noteCtrl = TextEditingController();
   String? _noteError;
 
-  bool get _isOther => _selectedType == 'other';
+  // ✅ محدَّث — "أخرى" لم تعد موجودة كخيار (غير مسموحة في قيد الـ CHECK)؛
+  // الحقل النصي الآن يظهر ويصبح إجبارياً حصراً مع 'معلومات غير صحيحة'
+  // لأنه النوع الوحيد المسموح له بحمل description في القاعدة الفعلية.
+  bool get _isOther => _selectedType == ReportType.wrongInfo;
 
   @override
   void dispose() {

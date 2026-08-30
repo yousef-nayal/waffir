@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/utils/app_provider.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/mock_data.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/constants/aleppo_blocks.dart';
 import '../../../core/widgets/common_widgets.dart';
@@ -245,6 +244,16 @@ class _ProductCard extends StatelessWidget {
 // (التي لم تكن حتى مرتبطة بالمنتج المعروض). كما أُضيف تصويت فعلي
 // (إعجاب/عدم إعجاب) وزر بلاغ فعلي يفتحان الآن PriceProvider/ReportProvider
 // بدل أن يكونا مجرّد نص بلا استجابة.
+//
+// ✅ إصلاح جوهري إضافي — كانت الشاشة ترجع صامتاً إلى MockData.products.first
+// كلما وصل إليها المستخدم بلا وسيط (arguments) صالح من نوع ProductModel،
+// حتى في وضع الإنتاج (AppConfig.useMockData = false). هذا يعني أن أي خطأ
+// برمجي مستقبلي في مكان استدعاء Navigator.pushNamed (وسيط مفقود أو من نوع
+// خاطئ) كان سيُخفى تماماً بعرض منتج وهمي ("رز أبيض" الثابت) بدل كشف الخطأ،
+// وقد يعرض المستخدم لبيانات مضلِّلة (أسعار/تفاصيل منتج لا علاقة له بما
+// نقر عليه فعلياً). الآن: إن لم يصل وسيط صالح، تُعرض حالة خطأ صريحة بنفس
+// نمط OfficialPriceHistoryScreen، ولا يُستدعى تحميل الأسعار إطلاقاً بمعرّف
+// منتج وهمي.
 // ══════════════════════════════════════════════════════════════════════════════
 class ProductDetailScreen extends StatefulWidget {
   const ProductDetailScreen({super.key});
@@ -261,12 +270,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_initialized) {
-      _product = ModalRoute.of(context)!.settings.arguments as ProductModel? ??
-          MockData.products.first;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      _product = args is ProductModel ? args : null;
       _initialized = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<PriceProvider>().loadProductPrices(_product!.id);
-      });
+      if (_product != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          context.read<PriceProvider>().loadProductPrices(_product!.id);
+        });
+      }
     }
   }
 
@@ -282,9 +293,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     // اختيار "أخرى"، اختياري لبقية الأسباب). يُرسَل الآن تحت مفتاح
     // description الفعلي عبر ReportService (راجع report_service.dart).
     // ══════════════════════════════════════════════════════════════════
-    final ok = await context
-        .read<ReportProvider>()
-        .submitReport(priceEntryId: entry.id, type: reason.type, note: reason.note);
+    final ok = await context.read<ReportProvider>().submitReport(
+        priceEntryId: entry.id, type: reason.type, note: reason.note);
     if (!mounted) return;
     messenger.showSnackBar(SnackBar(
         content: Text(ok ? 'شكراً، تم إرسال بلاغك' : 'تعذّر إرسال البلاغ'),
@@ -293,6 +303,39 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ حالة خطأ صريحة بدل عرض منتج وهمي (MockData.products.first سابقاً)
+    // عند وصول وسيط غير صالح للشاشة — بنفس نمط OfficialPriceHistoryScreen.
+    if (_product == null) {
+      return Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_forward_ios, size: 18),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline, size: 40, color: AppColors.error),
+                  const SizedBox(height: 12),
+                  Text('تعذّر تحميل بيانات المنتج',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: AppColors.textSecondaryOf(context),
+                          fontSize: 14)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final product = _product!;
     final provider = context.watch<AppProvider>();
     final priceProvider = context.watch<PriceProvider>();
@@ -1662,7 +1705,8 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
   // تعني "بدون علامة تجارية"، بدل الاعتماد على مطابقة نص اسم كما كان
   // سابقاً. هذا المعرّف لا يُرسَل للـ backend أبداً (راجع _submit أدناه:
   // يُترجَم إلى null قبل الإرسال).
-  static const String _noBrandOption = '';
+  // Seed data reserves brand id 1 for the explicit no-brand option.
+  static const String _noBrandOption = '1';
 
   // ✅ محدَّث — سلسلة اختيار من 3 مستويات: الكتلة الإدارية أولاً، ثم
   // المنطقة/الحي التابع لتلك الكتلة (عبر AleppoBlocks.areasOfBlock)، ثم
@@ -1789,10 +1833,7 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
           price: price,
           unitId: _unitId!,
           quantity: qty,
-          // ✅ "بدون علامة تجارية" (معرّف فارغ '') خيار عرض فقط — لا يُرسَل
-          // للـ backend كسلسلة فارغة، بل يُترجَم إلى عدم إرسال brand_id
-          // أصلاً (راجع PriceService.submitPrice).
-          brandId: _brandId.isEmpty ? null : _brandId,
+          brandId: _brandId,
         );
     if (!mounted) return;
     setState(() => _loading = false);
@@ -1929,7 +1970,7 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
             const SizedBox(height: 8),
             // ✅ محدَّث — قائمة العلامات التجارية الحقيقية (id → اسم) بدل
             // MockData.brands، مع إبقاء خيار "بدون علامة تجارية" في أعلى
-            // القائمة بنفس مكانه وشكله تماماً (معرّفه الآن '' بدل نص ثابت).
+            // القائمة بنفس مكانه وشكله تماماً.
             _IdDropdown(
                 hint: 'اختر العلامة التجارية',
                 value: _brandId,
@@ -1937,7 +1978,8 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
                   _noBrandOption: 'بدون علامة تجارية',
                   for (final b in brands) b.id: b.name,
                 },
-                onChanged: (v) => setState(() => _brandId = v ?? _noBrandOption)),
+                onChanged: (v) =>
+                    setState(() => _brandId = v ?? _noBrandOption)),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(12),
@@ -2072,51 +2114,7 @@ class _LockedField extends StatelessWidget {
       );
 }
 
-class _Dropdown extends StatelessWidget {
-  final String hint;
-  final String? value;
-  final List<String> items;
-  final ValueChanged<String?> onChanged;
-
-  const _Dropdown(
-      {required this.hint,
-      required this.value,
-      required this.items,
-      required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) => DropdownButtonFormField<String>(
-        initialValue: value,
-        hint: Text(hint,
-            style:
-                TextStyle(color: AppColors.textHintOf(context), fontSize: 14)),
-        isExpanded: true,
-        style: TextStyle(color: AppColors.textPrimaryOf(context), fontSize: 14),
-        dropdownColor: AppColors.surfaceOf(context),
-        decoration: InputDecoration(
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.borderOf(context))),
-          enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.borderOf(context))),
-          focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 2)),
-          filled: true,
-          fillColor: AppColors.surfaceOf(context),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        ),
-        items: items
-            .map((item) => DropdownMenuItem(
-                value: item, child: Text(item, textAlign: TextAlign.right)))
-            .toList(),
-        onChanged: onChanged,
-      );
-}
-
-/// ✅ جديد — نفس شكل [_Dropdown] لكن يحتفظ بمفتاح (id) مستقل عن التسمية
+/// ✅ جديد — يحتفظ بمفتاح (id) مستقل عن التسمية
 /// المعروضة، حتى يمكن إرسال product_id/store_id/unit_id/brand_id الحقيقيين
 /// إلى الـ backend بدل الاسم النصي فقط.
 class _IdDropdown extends StatelessWidget {

@@ -3,35 +3,58 @@ class UserModel {
   final String name;
   final String phone;
   final String role;
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ جديد — roleLevel يحفظ القيمة الرقمية الخام لعمود role (0/1/2) كما
+  // وصلت من الخادم، بمعزل عن [role] النصي أعلاه الذي يُجمِّع كلاً من 1 و2
+  // معاً تحت الاسم العام "admin" (لأغراض التحقق من صلاحية الدخول للوحة
+  // الإدارة فقط — راجع التوضيح الكامل عند _parseRole أدناه). هذا الحقل هو
+  // المصدر الوحيد للتمييز الفعلي بين "مسؤول" (1) و"مسؤول رئيسي" (2) في
+  // واجهات العرض (مثال: نافذة "معلومات الحساب" في إعدادات لوحة الإدارة).
+  // ══════════════════════════════════════════════════════════════════════
+  final int roleLevel;
   final String location;
   final int pricesCount;
   final int ratingsCount;
   final int reportsCount;
   final bool isActive;
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ جديد — تاريخ إنشاء الحساب، يطابق عمود User.created_at الفعلي في
+  // قاعدة البيانات. اختياري (nullable) لأن بعض مسارات البناء المحلية
+  // (مثال: تسجيل دخول تجريبي قبل ضبط قيمة صريحة) قد لا تملك قيمة حقيقية؛
+  // الشاشات التي تعرضه (AdminUsersScreen) تتعامل مع القيمة الفارغة بعرض
+  // بديل واضح ('—') بدل أي خطأ.
+  // ══════════════════════════════════════════════════════════════════════
+  final DateTime? createdAt;
 
   UserModel({
     required this.id,
     required this.name,
     required this.phone,
     this.role = 'user',
+    this.roleLevel = 0,
     this.location = '',
     this.pricesCount = 0,
     this.ratingsCount = 0,
     this.reportsCount = 0,
     this.isActive = true,
+    this.createdAt,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
       id: (json['id'] ?? '').toString(),
       name: json['name'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
+      phone: json['phone_number'] as String? ?? json['phone'] as String? ?? '',
       role: _parseRole(json['role']),
+      roleLevel: _parseRoleLevel(json['role']),
       location: json['location'] as String? ?? '',
       pricesCount: json['prices_count'] as int? ?? 0,
       ratingsCount: json['ratings_count'] as int? ?? 0,
       reportsCount: json['reports_count'] as int? ?? 0,
       isActive: json['is_active'] as bool? ?? true,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
     );
   }
 
@@ -68,22 +91,54 @@ class UserModel {
     return 'user';
   }
 
+  /// ✅ جديد — يقرأ القيمة الرقمية الخام (0/1/2) لعمود role كما هي، بلا أي
+  /// تجميع بين المستويين الإداريين كما يفعل [_parseRole] أعلاه. يُستخدَم
+  /// حصراً لعرض التمييز الدقيق بين "مسؤول" و"مسؤول رئيسي" في الواجهة.
+  static int _parseRoleLevel(dynamic raw) {
+    if (raw == null) return 0;
+    if (raw is int) return raw;
+    if (raw is String) {
+      final asInt = int.tryParse(raw);
+      if (asInt != null) return asInt;
+      // نص جاهز مثل 'admin' — لا يحمل تمييزاً بين 1 و2، فيُعامَل كمستوى
+      // إداري أساسي (1) احتياطاً بدل فقدان صلاحية الإدارة بالكامل.
+      return raw == 'admin' ? 1 : 0;
+    }
+    return 0;
+  }
+
   /// ✅ جديد — يحوّل دور نصي داخلي ('admin'/'user') إلى القيمة الرقمية
   /// المطابقة لعمود role في قاعدة البيانات، للاستخدام عند الإرسال للخادم
   /// (مثال: ترقية/تخفيض مستخدم من لوحة الإدارة). 'admin' تُرسَل كـ 1
   /// افتراضياً (المستوى الإداري الأساسي، وليس 2 المحجوز لمستوى أعلى).
   static int roleToInt(String role) => role == 'admin' ? 1 : 0;
 
+  /// ✅ جديد — نص عرض الصلاحية الإدارية الدقيق للواجهة، مبني على roleLevel
+  /// الخام مباشرة: 1 = "مسؤول"، 2 = "مسؤول رئيسي". أي قيمة أخرى (0 أو غير
+  /// معروفة) تُعرض كـ"مستخدم عادي" تحسباً لاستخدام هذا الحقل خارج سياق
+  /// لوحة الإدارة مستقبلاً.
+  String get roleLevelLabel {
+    switch (roleLevel) {
+      case 2:
+        return 'مسؤول رئيسي';
+      case 1:
+        return 'مسؤول';
+      default:
+        return 'مستخدم عادي';
+    }
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
-        'phone': phone,
+        'phone_number': phone,
         'role': role,
         'location': location,
         'prices_count': pricesCount,
         'ratings_count': ratingsCount,
         'reports_count': reportsCount,
         'is_active': isActive,
+        if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       };
 
   UserModel copyWith({
@@ -91,22 +146,26 @@ class UserModel {
     String? name,
     String? phone,
     String? role,
+    int? roleLevel,
     String? location,
     int? pricesCount,
     int? ratingsCount,
     int? reportsCount,
     bool? isActive,
+    DateTime? createdAt,
   }) {
     return UserModel(
       id: id ?? this.id,
       name: name ?? this.name,
       phone: phone ?? this.phone,
       role: role ?? this.role,
+      roleLevel: roleLevel ?? this.roleLevel,
       location: location ?? this.location,
       pricesCount: pricesCount ?? this.pricesCount,
       ratingsCount: ratingsCount ?? this.ratingsCount,
       reportsCount: reportsCount ?? this.reportsCount,
       isActive: isActive ?? this.isActive,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }
@@ -197,8 +256,10 @@ class StoreModel {
       id: (json['id'] ?? '').toString(),
       name: json['name'] as String? ?? '',
       address: json['address'] as String? ?? '',
-      area: json['area'] as String? ?? '',
-      sector: json['sector'] as String? ?? '',
+      area: json['area'] as String? ?? json['district'] as String? ?? '',
+      sector: json['sector'] is Map
+          ? json['sector']['name'] as String? ?? ''
+          : json['sector'] as String? ?? '',
       isVerified: json['is_verified'] as bool? ?? false,
       pricesCount: json['prices_count'] as int? ?? 0,
     );
@@ -396,14 +457,16 @@ class ReportModel {
   // الحقل يبقى يعمل بشكل طبيعي (يظهر فقط ضمن "الكل" ولا يظهر تحت أي كتلة).
   final String storeArea;
   final String userName;
-  final String type; // 'wrong_price' | 'outdated' | 'duplicate' | 'other'
+  final String type;
   // ✅ جديد — يطابق عمود description الفعلي في جدول Report (كان الفرونت
   // يرسل هذا النص سابقاً تحت مفتاح 'note' الخاطئ ولا يقرأه إطلاقاً عند
   // الاستقبال). غير مستخدَم حالياً في أي واجهة عرض — إضافته هنا فقط لضمان
   // عدم فقدانه صامتاً عند القراءة من الخادم مستقبلاً، بلا أي تغيير مرئي.
   final String? description;
   final DateTime reportedAt;
-  final String status; // 'pending' | 'reviewed' | 'resolved'
+  final double? price;
+  final String? unit;
+  final double? quantity;
 
   ReportModel({
     required this.id,
@@ -414,7 +477,9 @@ class ReportModel {
     required this.type,
     this.description,
     required this.reportedAt,
-    this.status = 'pending',
+    this.price,
+    this.unit,
+    this.quantity,
   });
 
   factory ReportModel.fromJson(Map<String, dynamic> json) {
@@ -429,7 +494,11 @@ class ReportModel {
       reportedAt: json['reported_at'] != null
           ? DateTime.parse(json['reported_at'] as String)
           : DateTime.now(),
-      status: json['status'] as String? ?? 'pending',
+      price: json['price'] != null ? _toDouble(json['price']) : null,
+      unit: json['unit'] as String?,
+      quantity: json['amount'] != null || json['quantity'] != null
+          ? _toDouble(json['amount'] ?? json['quantity'])
+          : null,
     );
   }
 
@@ -442,20 +511,10 @@ class ReportModel {
         'type': type,
         if (description != null) 'description': description,
         'reported_at': reportedAt.toIso8601String(),
-        'status': status,
+        if (price != null) 'price': price,
+        if (unit != null) 'unit': unit,
+        if (quantity != null) 'amount': quantity,
       };
-
-  ReportModel copyWith({String? status}) => ReportModel(
-        id: id,
-        productName: productName,
-        storeName: storeName,
-        storeArea: storeArea,
-        userName: userName,
-        type: type,
-        description: description,
-        reportedAt: reportedAt,
-        status: status ?? this.status,
-      );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -501,7 +560,9 @@ class OfficialPrice {
       price: _toDouble(json['price']),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
-          : DateTime.now(),
+          : json['created_at'] != null
+              ? DateTime.parse(json['created_at'] as String)
+              : DateTime.now(),
     );
   }
 
@@ -513,9 +574,10 @@ class OfficialPrice {
         'unit': unit,
         'amount': quantity,
         'price': price,
-        'updated_at': updatedAt.toIso8601String(),
+        'created_at': updatedAt.toIso8601String(),
       };
 }
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ✅ جديد — سجل تغييرات السعر الرسمي عبر الزمن. تُستخدم في شاشة
 // OfficialPriceHistoryScreen التي تُفتح عند النقر على أي مادة في شاشة
@@ -597,6 +659,7 @@ class BrandModel {
 
 class LocationModel {
   final String id;
+  final String? sectorId;
   final String sector;
   final String area;
   final String landmark;
@@ -604,6 +667,7 @@ class LocationModel {
 
   LocationModel({
     required this.id,
+    this.sectorId,
     required this.sector,
     required this.area,
     required this.landmark,
@@ -613,8 +677,15 @@ class LocationModel {
   factory LocationModel.fromJson(Map<String, dynamic> json) {
     return LocationModel(
       id: (json['id'] ?? '').toString(),
-      sector: json['sector'] as String? ?? '',
-      area: json['area'] as String? ?? '',
+      sectorId: json['sector_id'] != null
+          ? json['sector_id'].toString()
+          : (json['sector'] is Map
+              ? (json['sector']['id'] ?? '').toString()
+              : null),
+      sector: json['sector'] is Map
+          ? json['sector']['name'] as String? ?? ''
+          : json['sector'] as String? ?? '',
+      area: json['area'] as String? ?? json['district'] as String? ?? '',
       landmark: json['landmark'] as String? ?? '',
       storesCount: json['stores_count'] as int? ?? 0,
     );
@@ -622,9 +693,28 @@ class LocationModel {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        if (sectorId != null) 'sector_id': sectorId,
         'sector': sector,
         'area': area,
         'landmark': landmark,
         'stores_count': storesCount,
       };
+}
+
+class SectorModel {
+  final String id;
+  final String name;
+  final String description;
+
+  const SectorModel({
+    required this.id,
+    required this.name,
+    this.description = '',
+  });
+
+  factory SectorModel.fromJson(Map<String, dynamic> json) => SectorModel(
+        id: (json['id'] ?? '').toString(),
+        name: json['name'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+      );
 }

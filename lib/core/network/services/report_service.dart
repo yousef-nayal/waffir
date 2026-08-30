@@ -7,16 +7,14 @@ class ReportService {
   final ApiClient _api;
   ReportService({ApiClient? api}) : _api = api ?? ApiClient();
 
-  /// GET /reports?status=&page=&per_page=
+  /// GET /reports?page=&per_page=
   Future<ApiResponse<List<ReportModel>>> getReports({
-    String? status,
     int page = 1,
     int perPage = 20,
   }) {
     return _api.get<ApiResponse<List<ReportModel>>>(
       '/reports',
       queryParameters: {
-        if (status != null && status != 'الكل') 'status': status,
         'page': page,
         'per_page': perPage,
       },
@@ -49,7 +47,7 @@ class ReportService {
     return _api.post<ReportModel>(
       '/reports',
       data: {
-        'price_entry_id': priceEntryId,
+        'price_id': priceEntryId,
         'type': type,
         if (canSendDescription && note != null && note.isNotEmpty)
           'description': note,
@@ -59,11 +57,7 @@ class ReportService {
     );
   }
 
-  /// DELETE /reports/{id} — ✅ جديد — (استخدام إداري) حذف بلاغ نهائياً.
-  /// حلّت محل updateReportStatus السابقة: جدول Report في قاعدة البيانات
-  /// الفعلية لا يحتوي عمود status إطلاقاً (راجع Waffir_Database.txt)، بينما
-  /// مخطط حالات الاستخدام يُدرج "حذف البلاغ" صراحة كالإجراء الوحيد المطلوب
-  /// ضمن "إدارة البلاغات" — فأصبح الحذف هو مسار المراجعة الإدارية الفعلي.
+  /// DELETE /reports/{id} — حذف البلاغ نهائياً.
   Future<void> deleteReport(String id) {
     return _api.delete<void>('/reports/$id');
   }

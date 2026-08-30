@@ -289,7 +289,9 @@ class MockData {
         pricesCount: 45,
         ratingsCount: 56,
         reportsCount: 3,
-        isActive: true),
+        isActive: true,
+        // ✅ جديد — تاريخ إنشاء الحساب (يطابق عمود User.created_at الفعلي)
+        createdAt: DateTime(2026, 1, 12)),
     UserModel(
         id: '2',
         name: 'فاطمة علي',
@@ -297,15 +299,21 @@ class MockData {
         role: 'user',
         location: 'الكتلة الثانية - العزيزية',
         pricesCount: 32,
-        isActive: true),
+        isActive: true,
+        createdAt: DateTime(2026, 2, 3)),
     UserModel(
         id: '3',
         name: 'خالد محمود',
         phone: '0933345678',
         role: 'admin',
+        // ✅ جديد — roleLevel = 1 ليطابق role: 'admin' نصياً (مستوى مسؤول
+        // أساسي)، بدل تركه صفراً افتراضياً وهو ما كان يخلق تعارضاً صامتاً
+        // بين role وroleLevel لنفس المستخدم.
+        roleLevel: 1,
         location: 'الكتلة الثانية - الأشرفية',
         pricesCount: 0,
-        isActive: true),
+        isActive: true,
+        createdAt: DateTime(2025, 11, 20)),
     UserModel(
         id: '4',
         name: 'سارة حسن',
@@ -313,18 +321,12 @@ class MockData {
         role: 'user',
         location: 'الكتلة الثانية - اليرمون',
         pricesCount: 12,
-        isActive: true),
+        isActive: true,
+        createdAt: DateTime(2026, 4, 8)),
   ];
 
   // ══════════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — أنواع البلاغات أصبحت مطابقة تماماً للقيم الثلاث
-  // الحصرية المسموحة في عمود Report.type بقاعدة البيانات الفعلية (راجع
-  // ReportType في models.dart وWaffir_Database.txt). description أصبح
-  // يظهر فقط مع النوع 'معلومات غير صحيحة' تحديداً (مطابقةً لقيد الـ CHECK
-  // الثاني على نفس العمود)، وحُذف الاعتماد على status لأن جدول Report لا
-  // يحتوي عمود status إطلاقاً — البلاغ إما موجود (قيد المراجعة ضمنياً) أو
-  // يُحذَف نهائياً من قبل المسؤول (راجع "حذف البلاغ" في مخطط حالات
-  // الاستخدام و_deleteReport في admin_shell.dart).
+  // ✅ أنواع البلاغات مطابقة للقيم الثلاث المسموحة في Report.type.
   // ✅ storeArea أُضيف لكل بلاغ (يطابق area المتجر المعني في المصفوفة أعلاه)
   // ليعمل فلتر الكتلة الإدارية الجديد في شاشة "إدارة البلاغات".
   // ══════════════════════════════════════════════════════════════════════
@@ -336,6 +338,9 @@ class MockData {
         storeArea: 'الحمدانية الحي الأول', // الكتلة الخامسة
         userName: 'أحمد محمود',
         type: ReportType.overpriced,
+        price: 45000,
+        unit: 'لتر',
+        quantity: 1,
         reportedAt: DateTime(2026, 5, 17, 14, 30)),
     ReportModel(
         id: '2',
@@ -344,6 +349,9 @@ class MockData {
         storeArea: 'العزيزية', // الكتلة الثانية
         userName: 'فاطمة علي',
         type: ReportType.wrongPrice,
+        price: 12000,
+        unit: 'كيلوغرام',
+        quantity: 1,
         reportedAt: DateTime(2026, 5, 17, 13, 15)),
     ReportModel(
         id: '3',
@@ -353,6 +361,9 @@ class MockData {
         userName: 'خالد حسن',
         type: ReportType.wrongInfo,
         description: 'يرجى التحقق من بيانات المنتج المسجّلة',
+        price: 18000,
+        unit: 'كيلوغرام',
+        quantity: 1,
         reportedAt: DateTime(2026, 5, 17, 11, 45)),
     ReportModel(
         id: '4',
@@ -361,6 +372,9 @@ class MockData {
         storeArea: 'صلاح الدين', // الكتلة الرابعة
         userName: 'سارة محمد',
         type: ReportType.overpriced,
+        price: 52000,
+        unit: 'لتر',
+        quantity: 2,
         reportedAt: DateTime(2026, 5, 17, 10, 20)),
   ];
 
@@ -466,6 +480,12 @@ class MockData {
     'pricesGrowth': 18,
   };
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ✅ محدَّث — نص نشاط "سوبر ماركت النور" أصبح "تم إضافة متجر" بدل "طلب
+  // تفعيل متجر" بطلب مباشر، ليعكس أن المتجر أُضيف فعلياً إلى النظام (وليس
+  // فقط طلباً معلّقاً بانتظار المراجعة). بلا أي تغيير في باقي حقول هذه
+  // المدخلة (النوع، الوقت، اللون) أو أي مدخلة أخرى في هذه القائمة.
+  // ══════════════════════════════════════════════════════════════════════
   static List<Map<String, dynamic>> recentActivity = [
     {
       'type': 'price',
@@ -487,7 +507,7 @@ class MockData {
     },
     {
       'type': 'store',
-      'text': 'طلب تفعيل متجر: سوبر ماركت النور',
+      'text': 'تم إضافة متجر: سوبر ماركت النور',
       'time': 'منذ 1 ساعة',
       'color': 'purple'
     },

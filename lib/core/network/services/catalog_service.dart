@@ -180,13 +180,12 @@ class CatalogService {
   }
 
   Future<LocationModel> createLocation({
-    required String sector,
-    required String area,
-    required String landmark,
+    required String sectorId,
+    required String district,
   }) {
     return _api.post<LocationModel>(
       '/locations',
-      data: {'sector': sector, 'area': area, 'landmark': landmark},
+      data: {'sector_id': sectorId, 'district': district},
       fromJson: (json) => LocationModel.fromJson(
           (json as Map<String, dynamic>)['data'] ?? json),
     );
@@ -196,13 +195,12 @@ class CatalogService {
   /// مطابقةً لعنصر "تعديل" في مخطط حالات الاستخدام لـ"إدارة المواقع والكتل".
   Future<LocationModel> updateLocation(
     String id, {
-    required String sector,
-    required String area,
-    required String landmark,
+    required String sectorId,
+    required String district,
   }) {
     return _api.put<LocationModel>(
       '/locations/$id',
-      data: {'sector': sector, 'area': area, 'landmark': landmark},
+      data: {'sector_id': sectorId, 'district': district},
       fromJson: (json) => LocationModel.fromJson(
           (json as Map<String, dynamic>)['data'] ?? json),
     );
@@ -213,6 +211,43 @@ class CatalogService {
   Future<void> deleteLocation(String id) {
     return _api.delete<void>('/locations/$id');
   }
+
+  Future<List<SectorModel>> getSectors() {
+    return _api.get<List<SectorModel>>(
+      '/sectors',
+      fromJson: (json) {
+        final list = (json as Map<String, dynamic>)['data'] as List? ?? [];
+        return list.map((e) => SectorModel.fromJson(e)).toList();
+      },
+    );
+  }
+
+  Future<SectorModel> createSector({
+    required String name,
+    String description = '',
+  }) {
+    return _api.post<SectorModel>(
+      '/sectors',
+      data: {'name': name, 'description': description},
+      fromJson: (json) =>
+          SectorModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
+  Future<SectorModel> updateSector(
+    String id, {
+    required String name,
+    String description = '',
+  }) {
+    return _api.put<SectorModel>(
+      '/sectors/$id',
+      data: {'name': name, 'description': description},
+      fromJson: (json) =>
+          SectorModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
+    );
+  }
+
+  Future<void> deleteSector(String id) => _api.delete<void>('/sectors/$id');
 
   // ── لوحة الإحصائيات الإدارية ───────────────────────────────────────
   /// GET /admin/dashboard-stats

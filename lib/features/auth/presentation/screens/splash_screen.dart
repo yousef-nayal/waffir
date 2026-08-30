@@ -22,12 +22,16 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _bootstrap() async {
     // يحاول استعادة جلسة محفوظة (auto-login) عندما يكون الـ backend الحقيقي مفعّلاً.
-    final provider = context.read<AppProvider>();
+    final provider = context.read<AppProvider?>();
+    if (provider == null) {
+      if (mounted) setState(() => _checking = false);
+      return;
+    }
     await provider.restoreSession();
     if (!mounted) return;
     if (provider.isLoggedIn) {
-      Navigator.pushReplacementNamed(
-          context, provider.isAdmin ? AppRoutes.adminDashboard : AppRoutes.userHome);
+      Navigator.pushReplacementNamed(context,
+          provider.isAdmin ? AppRoutes.adminDashboard : AppRoutes.userHome);
       return;
     }
     setState(() => _checking = false);
@@ -129,43 +133,48 @@ class _SplashScreenState extends State<SplashScreen> {
                             SizedBox(
                               width: double.infinity,
                               child: OutlinedButton(
-                                onPressed: () =>
-                                    Navigator.pushNamed(context, AppRoutes.login),
+                                onPressed: () => Navigator.pushNamed(
+                                    context, AppRoutes.login),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: Colors.white,
-                                  side: const BorderSide(color: Colors.white, width: 2),
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  side: const BorderSide(
+                                      color: Colors.white, width: 2),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14)),
                                 ),
                                 child: const Text('تسجيل الدخول',
                                     style: TextStyle(
-                                        fontSize: 16, fontWeight: FontWeight.w600)),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600)),
                               ),
                             ),
                             const SizedBox(height: 12),
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
-                                onPressed: () =>
-                                    Navigator.pushNamed(context, AppRoutes.register),
+                                onPressed: () => Navigator.pushNamed(
+                                    context, AppRoutes.register),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.white,
                                   foregroundColor: AppColors.primary,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 16),
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(14)),
                                   elevation: 0,
                                 ),
                                 child: const Text('إنشاء حساب جديد',
                                     style: TextStyle(
-                                        fontSize: 16, fontWeight: FontWeight.w600)),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600)),
                               ),
                             ),
                             const SizedBox(height: 16),
                             TextButton(
-                              onPressed: () =>
-                                  Navigator.pushNamed(context, AppRoutes.adminLogin),
+                              onPressed: () => Navigator.pushNamed(
+                                  context, AppRoutes.adminLogin),
                               child: const Text(
                                 'دخول الإدارة',
                                 style: TextStyle(
@@ -225,8 +234,8 @@ class _FeatureCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           fontSize: 14)),
                   Text(subtitle,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 12)),
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12)),
                 ],
               ),
             ),

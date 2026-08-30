@@ -80,17 +80,34 @@ class AdminUserService {
     return _api.delete<void>('/admin/users/$id');
   }
 
-  /// PUT /admin/users/{id} — ✅ جديد — تعديل بيانات مستخدم (الاسم والموقع)
-  /// من لوحة الإدارة، مطابقةً لعنصر "تعديل" في نفس مخطط حالات الاستخدام.
+  /// PUT /admin/users/{id} — ✅ محدَّث (نسخة مدمجة) — تعديل بيانات مستخدم
+  /// (الاسم، رقم الهاتف، الموقع، وكلمة المرور)، جامعةً بين تعديلين
+  /// متوازيين طُبِّقا على هذا الملف في نفس الجلسة:
+  ///
+  /// 1. إضافة الوسيط الاختياري [phone] — يسمح لنافذة "تعديل معلومات
+  ///    المسؤول" (AdminAdminsScreen في admin_shell.dart) بتعديل رقم هاتف
+  ///    المسؤول من نفس النافذة، بدل الاقتصار على الاسم فقط. يُرسَل تحت
+  ///    مفتاح phone_number لمطابقة نفس التسمية المستخدمة في createUser
+  ///    أعلاه.
+  /// 2. إبقاء الوسيط الاختياري [password] — يتيح تغيير كلمة المرور مباشرة
+  ///    من نفس نافذة التعديل دون المرور بدورة "نسيت كلمة المرور" الكاملة.
+  ///
+  /// [phone] و[password] و[locationId] اختياريون تماماً: لا يُرسَل أيٌّ
+  /// منهم للخادم إلا إذا زوّده المستدعي فعلياً بقيمة غير فارغة، فلا يتأثر
+  /// أي استدعاء سابق لهذه الدالة كان يمرّر الاسم فقط.
   Future<UserModel> updateUser(
     String id, {
     required String name,
+    String? phone,
+    String? password,
     String? locationId,
   }) {
     return _api.put<UserModel>(
       '/admin/users/$id',
       data: {
         'name': name,
+        if (phone != null && phone.isNotEmpty) 'phone_number': phone,
+        if (password != null && password.isNotEmpty) 'password': password,
         if (locationId != null && locationId.isNotEmpty)
           'location_id': locationId,
       },

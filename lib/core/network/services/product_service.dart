@@ -56,11 +56,10 @@ class ProductService {
   Future<ProductModel> createProduct({
     required String name,
     required String category,
-    required String unit,
   }) {
     return _api.post<ProductModel>(
       '/products',
-      data: {'name': name, 'category': category, 'unit': unit},
+      data: {'name': name, 'category': category},
       fromJson: (json) =>
           ProductModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
     );
@@ -73,11 +72,10 @@ class ProductService {
     String id, {
     required String name,
     required String category,
-    required String unit,
   }) {
     return _api.put<ProductModel>(
       '/products/$id',
-      data: {'name': name, 'category': category, 'unit': unit},
+      data: {'name': name, 'category': category},
       fromJson: (json) =>
           ProductModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
     );

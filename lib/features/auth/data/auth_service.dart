@@ -15,7 +15,7 @@ class AuthService {
   }) async {
     final response = await _api.post<Map<String, dynamic>>(
       '/auth/login',
-      data: {'phone': phone, 'password': password},
+      data: {'phone_number': phone, 'password': password},
     );
     final result = AuthResult.fromJson(response);
     await _api.saveTokens(
@@ -45,7 +45,7 @@ class AuthService {
       '/auth/register',
       data: {
         'name': name,
-        'phone': phone,
+        'phone_number': phone,
         'password': password,
         'password_confirmation': password,
         'location_id': locationId,
@@ -93,14 +93,15 @@ class AuthService {
       '/auth/profile',
       data: {'name': name},
     );
-    return UserModel.fromJson(response['data'] as Map<String, dynamic>? ?? response);
+    return UserModel.fromJson(
+        response['data'] as Map<String, dynamic>? ?? response);
   }
 
   /// POST /auth/forgot-password
   Future<void> forgotPassword(String phone) async {
     await _api.post<void>(
       '/auth/forgot-password',
-      data: {'phone': phone},
+      data: {'phone_number': phone},
     );
   }
 
@@ -111,7 +112,7 @@ class AuthService {
   }) async {
     await _api.post<void>(
       '/auth/verify-otp',
-      data: {'phone': phone, 'code': code},
+      data: {'phone_number': phone, 'code': code},
     );
   }
 
@@ -119,7 +120,7 @@ class AuthService {
   Future<void> resendOtp({required String phone}) async {
     await _api.post<void>(
       '/auth/resend-otp',
-      data: {'phone': phone},
+      data: {'phone_number': phone},
     );
   }
 
@@ -133,7 +134,7 @@ class AuthService {
     await _api.put<void>(
       '/auth/reset-password',
       data: {
-        'phone': phone,
+        'phone_number': phone,
         'code': code,
         'new_password': newPassword,
         'new_password_confirmation': newPassword,
@@ -159,7 +160,8 @@ class AuthService {
   /// GET /auth/me — جلب بيانات المستخدم الحالي (تُستخدم في السبلاش عند وجود توكن محفوظ)
   Future<UserModel> getCurrentUser() async {
     final response = await _api.get<Map<String, dynamic>>('/auth/me');
-    return UserModel.fromJson(response['data'] as Map<String, dynamic>? ?? response);
+    return UserModel.fromJson(
+        response['data'] as Map<String, dynamic>? ?? response);
   }
 
   Future<bool> hasSavedSession() => _api.hasValidSession();

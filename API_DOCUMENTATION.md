@@ -40,7 +40,9 @@ Providers)، لذا لا حاجة لتعديل أي واجهة عند ربط ا�
 ```json
 {
   "success": true,
-  "data": { /* أو [ ] لقائمة */ },
+  "data": {
+    /* أو [ ] لقائمة */
+  },
   "message": "نص اختياري",
   "pagination": {
     "current_page": 1,
@@ -56,7 +58,11 @@ Providers)، لذا لا حاجة لتعديل أي واجهة عند ربط ا�
 - **أخطاء**: أي كود حالة غير 2xx يجب أن يُرجع:
 
 ```json
-{ "success": false, "message": "رسالة الخطأ بالعربية", "errors": { "field": ["..."] } }
+{
+  "success": false,
+  "message": "رسالة الخطأ بالعربية",
+  "errors": { "field": ["..."] }
+}
 ```
 
 أكواد الحالة التي يتعرف عليها التطبيق: `401` (منتهي الجلسة)، `403` (ممنوع)،
@@ -67,48 +73,78 @@ Providers)، لذا لا حاجة لتعديل أي واجهة عند ربط ا�
 ## 2. المصادقة (Auth)
 
 ### POST /auth/login
+
 طلب:
+
 ```json
-{ "phone": "0944123456", "password": "••••••" }
+{ "phone_number": "0944123456", "password": "••••••" }
 ```
+
 رد (`data`):
+
 ```json
 {
   "access_token": "...",
   "refresh_token": "...",
-  "user": { "id": "1", "name": "محمد أحمد", "phone": "0944123456", "role": "user", "location": "حلب - الفرقان", "prices_count": 45, "ratings_count": 56, "reports_count": 3, "is_active": true }
+  "user": {
+    "id": "1",
+    "name": "محمد أحمد",
+    "phone_number": "0944123456",
+    "role": 0,
+    "location": "حلب - الفرقان",
+    "prices_count": 45,
+    "ratings_count": 56,
+    "reports_count": 3,
+    "is_active": true
+  }
 }
 ```
 
 ### POST /auth/register
+
 طلب:
+
 ```json
-{ "name": "محمد أحمد", "phone": "0944123456", "password": "••••••", "password_confirmation": "••••••", "sector": "حلب" }
+{
+  "name": "محمد أحمد",
+  "phone_number": "0944123456",
+  "password": "••••••",
+  "password_confirmation": "••••••",
+  "location_id": "12"
+}
 ```
+
 رد: نفس شكل `/auth/login`.
 
 ### POST /auth/admin/login
+
 طلب: `{ "username": "admin@waffir.sy", "password": "••••••" }` (يقبل هاتف أو بريد)
-رد: نفس شكل `/auth/login` مع `role: "admin"`.
+رد: نفس شكل `/auth/login` مع `role: 1` أو `role: 2`.
 
 ### POST /auth/logout
+
 بدون body، يُبطل الـ refresh token في الخادم.
 
 ### GET /auth/me
+
 يُستخدم عند فتح التطبيق لاستعادة الجلسة تلقائياً (auto-login) إن وُجد توكن محفوظ.
 رد: نفس شكل `user` أعلاه.
 
 ### PUT /auth/profile
+
 طلب: `{ "name": "الاسم الجديد" }` → رد: كائن `user` محدّث.
 
 ### POST /auth/refresh
+
 طلب: `{ "refresh_token": "..." }` → رد: `{ "access_token": "...", "refresh_token": "..." }`
 (يُستدعى تلقائياً من `ApiClient` عند انتهاء صلاحية التوكن، عبر Interceptor.)
 
 ### POST /auth/forgot-password
-طلب: `{ "phone": "0944123456" }` → يرسل رمز/رابط استعادة عبر SMS.
+
+طلب: `{ "phone_number": "0944123456" }` → يرسل رمز/رابط استعادة عبر SMS.
 
 ### PUT /auth/change-password
+
 طلب: `{ "current_password": "...", "new_password": "...", "new_password_confirmation": "..." }`
 
 ---
@@ -116,19 +152,28 @@ Providers)، لذا لا حاجة لتعديل أي واجهة عند ربط ا�
 ## 3. المنتجات (Products)
 
 نموذج `ProductModel`:
+
 ```json
 {
-  "id": "1", "name": "رز أبيض", "category": "حبوب",
-  "official_price": 12000, "real_price": 15500, "avg_price": 15200,
-  "unit": "كغ", "prices_count": 4, "change_percent": 29, "is_price_up": true
+  "id": "1",
+  "name": "رز أبيض",
+  "category": "حبوب",
+  "official_price": 12000,
+  "real_price": 15500,
+  "avg_price": 15200,
+  "unit": "كغ",
+  "prices_count": 4,
+  "change_percent": 29,
+  "is_price_up": true
 }
 ```
 
 - **GET /products?search=&category=&page=&per_page=** → قائمة `ProductModel` (paginated)
 - **GET /products/{id}** → `ProductModel` واحد
 - **GET /products/{id}/prices** → قائمة `PriceEntry` الخاصة بهذا المنتج
-- **POST /products** *(إداري)* → `{ "name": "...", "category": "...", "unit": "..." }`
-- **DELETE /products/{id}** *(إداري)*
+- **POST /products** _(إداري)_ → `{ "name": "...", "category": "..." }`
+- **PUT /products/{id}** _(إداري)_ → `{ "name": "...", "category": "..." }`
+- **DELETE /products/{id}** _(إداري)_
 
 `change_percent` و `is_price_up` يُفضَّل حسابهما في الخادم بمقارنة `real_price`
 مع `official_price` بدل حسابهما في التطبيق.
@@ -138,118 +183,206 @@ Providers)، لذا لا حاجة لتعديل أي واجهة عند ربط ا�
 ## 4. المتاجر (Stores)
 
 نموذج `StoreModel`:
+
 ```json
 {
-  "id": "1", "name": "محل الأمانة", "address": "شارع الفرقان الرئيسي",
-  "area": "الفرقان", "sector": "حلب", "is_verified": true, "prices_count": 24
+  "id": "1",
+  "name": "محل الأمانة",
+  "address": "شارع الفرقان الرئيسي",
+  "location_id": "12",
+  "is_verified": true,
+  "prices_count": 24
 }
 ```
 
 - **GET /stores?search=&sector=&page=&per_page=**
 - **GET /stores/{id}**
-- **POST /stores** → `{ "name", "address", "area", "sector" }` (يمكن استخدامه من مستخدم عادي كـ"اقتراح متجر جديد" بحالة `pending` حتى يوثّقه الإداري)
-- **PATCH /stores/{id}/verify** *(إداري)* → `{ "is_verified": true }`
-- **DELETE /stores/{id}** *(إداري)*
+- **POST /stores** → `{ "location_id", "name", "address" }` (يمكن استخدامه من مستخدم عادي كـ"اقتراح متجر جديد" بحالة `pending` حتى يوثّقه الإداري)
+- **PUT /stores/{id}** _(إداري)_ → `{ "name", "address", "location_id"? }`
+- **PATCH /stores/{id}/verify** _(إداري)_ → `{ "is_verified": true }`
+- **DELETE /stores/{id}** _(إداري)_
 
 ---
 
 ## 5. الأسعار المُقدَّمة من المستخدمين (Prices)
 
 نموذج `PriceEntry`:
+
 ```json
 {
-  "id": "1", "product_name": "زيت زيتون فلسطين", "store_name": "سوبر ماركت النور",
-  "store_area": "الميدان", "price": 45000, "unit": "لتر", "quantity": 1,
-  "brand": "فلسطين", "submitted_by": "محمد أحمد",
+  "id": "1",
+  "product_name": "زيت زيتون فلسطين",
+  "store_name": "سوبر ماركت النور",
+  "store_area": "الميدان",
+  "price": 45000,
+  "unit_id": "1",
+  "amount": 1,
+  "brand_id": "2",
+  "submitted_by": "محمد أحمد",
   "submitted_at": "2026-05-17T10:00:00Z",
-  "thumbs_up": 12, "thumbs_down": 2, "total_ratings": 14, "status": "pending"
+  "thumbs_up": 12,
+  "thumbs_down": 2,
+  "total_ratings": 14
 }
 ```
-`status` من: `pending` | `approved` | `rejected`.
 
-- **GET /prices?status=&page=&per_page=** *(مراجعة إدارية)*
+- **GET /prices?page=&per_page=** _(مراجعة إدارية؛ لا يوجد status في جدول Price)_
 - **POST /prices** → إرسال سعر من المستخدم (شاشة "إضافة سعر"):
   ```json
-  { "product_id": "1", "store_id": "2", "price": 15500, "unit": "كغ", "quantity": 1, "brand": "العروس" }
+  {
+    "product_id": "1",
+    "store_id": "2",
+    "price": 15500,
+    "unit_id": "1",
+    "amount": 1,
+    "brand_id": "2"
+  }
   ```
 - **POST /prices/{id}/vote** → `{ "is_up": true }` (إعجاب/عدم إعجاب من مستخدم آخر)
-- **PATCH /prices/{id}/approve** أو **/prices/{id}/reject** *(إداري)*
+- **DELETE /prices/{id}** _(إداري)_
 
 ---
 
 ## 6. البلاغات (Reports)
 
 نموذج `ReportModel`:
+
 ```json
 {
-  "id": "1", "product_name": "زيت زيتون فلسطين", "store_name": "سوبر ماركت النور",
-  "user_name": "أحمد محمود", "type": "wrong_price",
-  "reported_at": "2026-05-17T14:30:00Z", "status": "pending"
+  "id": "1",
+  "product_name": "زيت زيتون فلسطين",
+  "store_name": "سوبر ماركت النور",
+  "store_area": "العزيزية",
+  "user_name": "أحمد محمود",
+  "type": "سعر غير صحيح",
+  "description": null,
+  "reported_at": "2026-05-17T14:30:00Z"
 }
 ```
-`type` من: `wrong_price` | `outdated` | `duplicate` | `other`.
-`status` من: `pending` | `reviewed` | `resolved`.
 
-- **GET /reports?status=&page=&per_page=** *(إداري)*
-- **POST /reports** → `{ "price_entry_id": "1", "type": "wrong_price", "note": "..." }`
-- **PATCH /reports/{id}** *(إداري)* → `{ "status": "resolved" }`
+`type` من: `سعر مبالغ فيه` | `سعر غير صحيح` | `معلومات غير صحيحة`.
+يُسمح بالحقل `description` فقط عندما تكون قيمة `type` هي `معلومات غير صحيحة`.
+
+- **GET /reports?page=&per_page=** _(إداري)_
+- **POST /reports** → `{ "price_id": "1", "type": "سعر غير صحيح" }`
+- **DELETE /reports/{id}** _(إداري)_
 
 ---
 
 ## 7. إدارة المستخدمين (Admin Users)
 
-- **GET /admin/users?search=&status=&page=&per_page=** → قائمة `UserModel` (`status`: active | blocked)
+- **GET /admin/users?search=&page=&per_page=** → قائمة `UserModel`
 - **PATCH /admin/users/{id}/block** أو **/admin/users/{id}/unblock**
-- **PATCH /admin/users/{id}/role** → `{ "role": "admin" }`
+- **PATCH /admin/users/{id}/role** → `{ "role": 0 }` أو `{ "role": 1 }` أو `{ "role": 2 }`
+
+ملاحظة مهمة: مخطط SQL الحالي لا يحتوي عمود `is_active` أو `status` في جدول
+`User`. لذلك يجب على الخادم تنفيذ الحظر في جدول مستقل (مثلاً UserBlock) أو
+إضافة عمود مخصص قبل تفعيل مساري الحظر وفلتر `status`. لا يجوز ادعاء أن هذه
+الحالة محفوظة داخل جدول `User` الحالي.
 
 ---
 
 ## 8. بيانات مرجعية إدارية بسيطة
 
 ### الأسعار الرسمية (`OfficialPrice`)
+
 ```json
-{ "id": "1", "product_name": "زيت زيتون فلسطين", "unit": "لتر", "quantity": 1, "price": 43000, "updated_at": "2026-05-15T00:00:00Z" }
+{
+  "id": "1",
+  "product_id": "1",
+  "unit_id": "2",
+  "product_name": "زيت زيتون فلسطين",
+  "unit": "لتر",
+  "amount": 1,
+  "price": 43000,
+  "created_at": "2026-05-15T00:00:00Z"
+}
 ```
+
 - **GET /official-prices?search=**
-- **POST /official-prices** → `{ "product_name", "unit", "quantity", "price" }`
+- **POST /official-prices** → `{ "product_id", "unit_id", "amount", "price" }`
+- **PUT /official-prices/{id}** → `{ "product_id", "unit_id", "amount", "price" }`
+- **DELETE /official-prices/{id}**
+- **GET /official-prices/{id}/history** → سجل الصفوف السابقة للسعر. بما أن
+  المخطط الحالي لا يحتوي `updated_at` ولا جدول تاريخ منفصلاً، يجب تنفيذ
+  تعديل السعر كسجل جديد (INSERT) والحفاظ على السجلات السابقة، أو إضافة جدول
+  تاريخ مستقل قبل تفعيل هذا المسار.
 
 ### الوحدات (`UnitModel`)
+
 ```json
 { "id": "1", "name": "كيلوغرام", "usage_count": 456 }
 ```
+
 - **GET /units** — **POST /units** `{ "name" }` — **DELETE /units/{id}**
 
 ### العلامات التجارية (`BrandModel`)
+
 ```json
 { "id": "1", "name": "فلسطين", "products_count": 45 }
 ```
+
 - **GET /brands** — **POST /brands** `{ "name" }` — **DELETE /brands/{id}**
 
 ### المواقع والقطاعات (`LocationModel`)
+
 ```json
-{ "id": "1", "sector": "دمشق", "area": "الميدان", "landmark": "شارع بغداد", "stores_count": 45 }
+{
+  "id": "1",
+  "sector_id": "5",
+  "sector": "الكتلة الخامسة",
+  "district": "الميدان",
+  "stores_count": 45
+}
 ```
-- **GET /locations?search=** — **POST /locations** `{ "sector", "area", "landmark" }`
+
+- **GET /sectors** → قائمة `{ "id", "name", "description" }`
+- **POST /sectors** _(إداري)_ → `{ "name", "description" }`
+- **PUT /sectors/{id}** _(إداري)_ → `{ "name", "description" }`
+- **DELETE /sectors/{id}** _(إداري)_
+- **GET /locations?search=**
+- **POST /locations** → `{ "sector_id", "district" }`
+- **PUT /locations/{id}** → `{ "sector_id", "district" }`
+- **DELETE /locations/{id}**
+
+`sector_id` هو مفتاح أجنبي إلى `Sector.id`، و`district` يطابق عمود
+`Location.district`. لا يرسل التطبيق `landmark` أو اسم القطاع كنص عند إنشاء
+أو تعديل الموقع. استجابات المواقع يمكنها تضمين `sector` كاسم جاهز للعرض، لكن
+مصدر الحقيقة هو `sector_id`.
 
 ---
 
 ## 9. لوحة الإحصائيات الإدارية
 
 ### GET /admin/dashboard-stats
+
 ```json
 {
-  "totalUsers": 1248, "totalProducts": 856, "totalStores": 324,
-  "totalPrices": 4562, "totalReports": 89,
-  "usersGrowth": 12, "productsGrowth": 8, "storesGrowth": 5, "pricesGrowth": 18
+  "totalUsers": 1248,
+  "totalProducts": 856,
+  "totalStores": 324,
+  "totalPrices": 4562,
+  "totalReports": 89,
+  "usersGrowth": 12,
+  "productsGrowth": 8,
+  "storesGrowth": 5,
+  "pricesGrowth": 18
 }
 ```
 
 ### GET /admin/recent-activity
+
 ```json
 [
-  { "type": "price", "text": "تم إضافة سعر جديد لمنتج زيت زيتون فلسطين", "time": "منذ 5 دقائق", "color": "blue" }
+  {
+    "type": "price",
+    "text": "تم إضافة سعر جديد لمنتج زيت زيتون فلسطين",
+    "time": "منذ 5 دقائق",
+    "color": "blue"
+  }
 ]
 ```
+
 `type`: price | report | user | store | official. `color`: blue | red | green | purple.
 
 ---
@@ -265,16 +398,16 @@ Providers)، لذا لا حاجة لتعديل أي واجهة عند ربط ا�
 
 ## 11. خريطة سريعة: أين يقع كل شيء في كود Flutter
 
-| الطبقة | الملف |
-|---|---|
-| عميل HTTP + إدارة التوكن | `lib/core/network/api_client.dart` |
-| شكل الأخطاء الموحّد | `lib/core/network/api_exception.dart` |
-| شكل الرد الموحّد + Pagination | `lib/core/network/api_response.dart` |
-| كل الـ Services (منتجات، متاجر، أسعار...) | `lib/core/network/services/*.dart` |
-| خدمة المصادقة | `lib/features/auth/data/auth_service.dart` |
-| الحالة العامة + تبديل mock/real | `lib/core/utils/app_provider.dart` |
-| مفتاح mock/real ورابط الـ API | `lib/core/config/app_config.dart` |
-| كل الـ Models وتحويل JSON | `lib/models/models.dart` |
+| الطبقة                                    | الملف                                      |
+| ----------------------------------------- | ------------------------------------------ |
+| عميل HTTP + إدارة التوكن                  | `lib/core/network/api_client.dart`         |
+| شكل الأخطاء الموحّد                       | `lib/core/network/api_exception.dart`      |
+| شكل الرد الموحّد + Pagination             | `lib/core/network/api_response.dart`       |
+| كل الـ Services (منتجات، متاجر، أسعار...) | `lib/core/network/services/*.dart`         |
+| خدمة المصادقة                             | `lib/features/auth/data/auth_service.dart` |
+| الحالة العامة + تبديل mock/real           | `lib/core/utils/app_provider.dart`         |
+| مفتاح mock/real ورابط الـ API             | `lib/core/config/app_config.dart`          |
+| كل الـ Models وتحويل JSON                 | `lib/models/models.dart`                   |
 
 أي عدم تطابق بين هذا الملف والكود الفعلي، اعتمدوا الكود كمرجع نهائي (خصوصاً
 دوال `fromJson`/`toJson` في `models.dart`) وأخبرونا لتحديث هذا الملف.

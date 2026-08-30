@@ -1,5 +1,4 @@
 // قياسات واجهة المستخدم الموحدة
-import 'package:flutter/material.dart';
 
 const double kNavBarHeight = 64.0; // target bottom nav height
 const double kNavIconSize = 24.0;

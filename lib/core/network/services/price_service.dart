@@ -16,7 +16,6 @@ class PriceService {
     return _api.get<ApiResponse<List<PriceEntry>>>(
       '/prices',
       queryParameters: {
-        if (status != null && status != 'الكل') 'status': status,
         'page': page,
         'per_page': perPage,
       },
@@ -42,7 +41,7 @@ class PriceService {
     required double price,
     required String unitId,
     required double amount,
-    String? brandId,
+    required String brandId,
   }) {
     return _api.post<PriceEntry>(
       '/prices',
@@ -52,7 +51,7 @@ class PriceService {
         'price': price,
         'unit_id': unitId,
         'amount': amount,
-        if (brandId != null && brandId.isNotEmpty) 'brand_id': brandId,
+        'brand_id': brandId,
       },
       fromJson: (json) =>
           PriceEntry.fromJson((json as Map<String, dynamic>)['data'] ?? json),

@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_routes.dart';
+// ✅ جديد — يلزم تحميل الكتل الإدارية المضافة سابقاً (المحفوظة محلياً)
+// قبل بناء أي واجهة، حتى تظهر فوراً في كل مكان يعتمد على AleppoBlocks.all.
+import 'core/constants/aleppo_blocks.dart';
 import 'core/utils/app_provider.dart';
 import 'features/auth/presentation/screens/splash_screen.dart';
 import 'features/auth/presentation/screens/auth_screens.dart' as auth;
@@ -18,8 +21,13 @@ import 'features/user/screens/official_price_history_screen.dart';
 import 'features/admin/admin_shell.dart';
 import 'features/legal/legal_screens.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // ✅ جديد — تحميل الكتل الإدارية المضافة من قبل المسؤول (إن وُجدت) من
+  // التخزين المحلي، قبل تشغيل التطبيق. بدون هذا الاستدعاء، أي كتلة أُضيفت
+  // في جلسة سابقة لن تظهر إلا بعد أول استخدام لشاشة "تعديل الكتل" في نفس
+  // الجلسة الحالية.
+  await AleppoBlocks.initialize();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(
     MultiProvider(
@@ -42,13 +50,14 @@ class WaffirApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AppProvider>();
+    final provider = context.watch<AppProvider?>();
     return MaterialApp(
       title: 'وفّر',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: provider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode:
+          provider?.isDarkMode == true ? ThemeMode.dark : ThemeMode.light,
       builder: (context, child) {
         return Directionality(
           textDirection: TextDirection.rtl,

@@ -289,9 +289,7 @@ class MockData {
         pricesCount: 45,
         ratingsCount: 56,
         reportsCount: 3,
-        isActive: true,
-        // ✅ جديد — تاريخ إنشاء الحساب (يطابق عمود User.created_at الفعلي)
-        createdAt: DateTime(2026, 1, 12)),
+        isActive: true),
     UserModel(
         id: '2',
         name: 'فاطمة علي',
@@ -299,21 +297,15 @@ class MockData {
         role: 'user',
         location: 'الكتلة الثانية - العزيزية',
         pricesCount: 32,
-        isActive: true,
-        createdAt: DateTime(2026, 2, 3)),
+        isActive: true),
     UserModel(
         id: '3',
         name: 'خالد محمود',
         phone: '0933345678',
         role: 'admin',
-        // ✅ جديد — roleLevel = 1 ليطابق role: 'admin' نصياً (مستوى مسؤول
-        // أساسي)، بدل تركه صفراً افتراضياً وهو ما كان يخلق تعارضاً صامتاً
-        // بين role وroleLevel لنفس المستخدم.
-        roleLevel: 1,
         location: 'الكتلة الثانية - الأشرفية',
         pricesCount: 0,
-        isActive: true,
-        createdAt: DateTime(2025, 11, 20)),
+        isActive: true),
     UserModel(
         id: '4',
         name: 'سارة حسن',
@@ -321,15 +313,11 @@ class MockData {
         role: 'user',
         location: 'الكتلة الثانية - اليرمون',
         pricesCount: 12,
-        isActive: true,
-        createdAt: DateTime(2026, 4, 8)),
+        isActive: true),
   ];
 
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ أنواع البلاغات مطابقة للقيم الثلاث المسموحة في Report.type.
   // ✅ storeArea أُضيف لكل بلاغ (يطابق area المتجر المعني في المصفوفة أعلاه)
   // ليعمل فلتر الكتلة الإدارية الجديد في شاشة "إدارة البلاغات".
-  // ══════════════════════════════════════════════════════════════════════
   static List<ReportModel> reports = [
     ReportModel(
         id: '1',
@@ -337,45 +325,36 @@ class MockData {
         storeName: 'سوبر ماركت النور',
         storeArea: 'الحمدانية الحي الأول', // الكتلة الخامسة
         userName: 'أحمد محمود',
-        type: ReportType.overpriced,
-        price: 45000,
-        unit: 'لتر',
-        quantity: 1,
-        reportedAt: DateTime(2026, 5, 17, 14, 30)),
+        type: 'wrong_price',
+        reportedAt: DateTime(2026, 5, 17, 14, 30),
+        status: 'pending'),
     ReportModel(
         id: '2',
         productName: 'سكر أبيض',
         storeName: 'بقالة الخير',
         storeArea: 'العزيزية', // الكتلة الثانية
         userName: 'فاطمة علي',
-        type: ReportType.wrongPrice,
-        price: 12000,
-        unit: 'كيلوغرام',
-        quantity: 1,
-        reportedAt: DateTime(2026, 5, 17, 13, 15)),
+        type: 'outdated',
+        reportedAt: DateTime(2026, 5, 17, 13, 15),
+        status: 'reviewed'),
     ReportModel(
         id: '3',
         productName: 'رز بسمتي',
         storeName: 'هايبر ماركت الشام',
         storeArea: 'السليمانية', // الكتلة الثانية
         userName: 'خالد حسن',
-        type: ReportType.wrongInfo,
-        description: 'يرجى التحقق من بيانات المنتج المسجّلة',
-        price: 18000,
-        unit: 'كيلوغرام',
-        quantity: 1,
-        reportedAt: DateTime(2026, 5, 17, 11, 45)),
+        type: 'duplicate',
+        reportedAt: DateTime(2026, 5, 17, 11, 45),
+        status: 'pending'),
     ReportModel(
         id: '4',
         productName: 'زيت ذرة',
         storeName: 'مول الجلاء',
         storeArea: 'صلاح الدين', // الكتلة الرابعة
         userName: 'سارة محمد',
-        type: ReportType.overpriced,
-        price: 52000,
-        unit: 'لتر',
-        quantity: 2,
-        reportedAt: DateTime(2026, 5, 17, 10, 20)),
+        type: 'other',
+        reportedAt: DateTime(2026, 5, 17, 10, 20),
+        status: 'resolved'),
   ];
 
   static List<OfficialPrice> officialPrices = [
@@ -480,16 +459,10 @@ class MockData {
     'pricesGrowth': 18,
   };
 
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ محدَّث — نص نشاط "سوبر ماركت النور" أصبح "تم إضافة متجر" بدل "طلب
-  // تفعيل متجر" بطلب مباشر، ليعكس أن المتجر أُضيف فعلياً إلى النظام (وليس
-  // فقط طلباً معلّقاً بانتظار المراجعة). بلا أي تغيير في باقي حقول هذه
-  // المدخلة (النوع، الوقت، اللون) أو أي مدخلة أخرى في هذه القائمة.
-  // ══════════════════════════════════════════════════════════════════════
   static List<Map<String, dynamic>> recentActivity = [
     {
       'type': 'price',
-      'text': 'تم إضافة منتج جديد (زيت زيتون) و سعر رسمي له',
+      'text': 'تم إضافة سعر جديد لمنتج زيت زيتون فلسطين',
       'time': 'منذ 5 دقائق',
       'color': 'blue'
     },
@@ -507,7 +480,7 @@ class MockData {
     },
     {
       'type': 'store',
-      'text': 'تم إضافة متجر: سوبر ماركت النور',
+      'text': 'طلب تفعيل متجر: سوبر ماركت النور',
       'time': 'منذ 1 ساعة',
       'color': 'purple'
     },
@@ -567,4 +540,4 @@ class MockData {
           id: 'h5-2', price: 8700, changedAt: DateTime(2026, 3, 22)),
     ],
   };
-}
+  }

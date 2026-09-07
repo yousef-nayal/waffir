@@ -56,7 +56,7 @@ class AppProvider extends ChangeNotifier {
   /// اسم المنطقة/الحي الحالي للمستخدم (مثال: "الفرقان")
   String get userLocation => _userLocation;
 
-  /// نص عرض جاهز يجمع الكتلة والمنطقة معاً: "الكتلة الخامسة — الفرقان"
+  /// نص عرض جاهز يجمع المنطقة والكتلة معاً: "الفرقان — الكتلة الخامسة"
   String get userLocationDisplay =>
       AleppoBlocks.displayLabel(block: _userBlock, area: _userLocation);
   String get userName => _userName;
@@ -115,34 +115,22 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — كانت هذه الدالة تبني نصاً حراً "الكتلة الخامسة -
-  // الفرقان" وترسله للخادم عبر AuthService.register(sector: ...)، رغم أن
-  // عمود User.location_id في قاعدة البيانات الفعلي مفتاح أجنبي إلزامي
-  // يشير لصف محدد في جدول Location — لا يوجد أي عمود نصي لتخزين "قطاع"
-  // على جدول User إطلاقاً.
-  //
-  // أُضيف الوسيط الاختياري [locationId]: يُحسَب في RegisterScreen قبل
-  // استدعاء هذه الدالة عبر CatalogProvider.locationIdForArea(area)، الذي
-  // يطابق اسم الحي المُختار مع قائمة المواقع الفعلية المُحمَّلة من الخادم.
-  // في وضع العرض التجريبي لا حاجة له إطلاقاً (يُتجاهَل).
-  // ══════════════════════════════════════════════════════════════════════
+  /// ✅ سعر التسجيل: [block] و[area] يُرسلان معاً إلى الـ backend ضمن حقل
+  /// sector كنص موحّد ("الكتلة الخامسة - الفرقان")، ويُحفظان محلياً بشكل
+  /// منفصل فور نجاح العملية حتى تعرضهما الشاشات فوراً دون انتظار استجابة
+  /// إضافية من الخادم.
   Future<bool> register({
     required String name,
     required String phone,
     required String password,
     required String block,
     required String area,
-    String? locationId,
   }) async {
     _userBlock = block;
     _userLocation = area;
+    final sector = '$block - $area';
     if (AppConfig.useMockData) {
       return loginMock(name: name, phone: phone);
-    }
-    if (locationId == null || locationId.isEmpty) {
-      _setError('تعذّر تحديد الموقع، حاول اختيار المنطقة مجدداً');
-      return false;
     }
     _setLoading();
     try {
@@ -150,7 +138,7 @@ class AppProvider extends ChangeNotifier {
         name: name,
         phone: phone,
         password: password,
-        locationId: locationId,
+        sector: sector,
       );
       // ✅ ملاحظة موثّقة في docs/API_ADDENDUM.md: التسجيل يعيد access/refresh
       // token فوراً حسب التوثيق، لكن المستخدم لا يزال بحاجة لتأكيد OTP قبل
@@ -345,25 +333,10 @@ class AppProvider extends ChangeNotifier {
       name: isAdmin ? 'مدير النظام' : name,
       phone: phone,
       role: isAdmin ? 'admin' : 'user',
-      // ✅ محدَّث — مستوى الصلاحية الرقمي الفعلي (1 = مسؤول، 2 = مسؤول
-      // رئيسي). حساب العرض التجريبي الوحيد للمسؤولين يُمثَّل الآن كـ"مسؤول
-      // رئيسي" (2) بدل "مسؤول عادي" (1): بما أن وضع العرض التجريبي لا يملك
-      // مفهوم "عدة مستويات إدارية" أصلاً (حساب واحد فقط)، ومنذ إضافة حارس
-      // الصلاحية على شاشة "إدارة المسؤولين" (المتاحة حصراً لمستوى 2)، كان
-      // إبقاء هذه القيمة على 1 سيمنع أي مستخدم في وضع العرض التجريبي من
-      // الوصول إليها إطلاقاً — فلا وجود لأي حساب تجريبي آخر بمستوى أعلى
-      // ليُستخدَم بدلاً منه. في الوضع الحقيقي (useMockData = false) يأتي
-      // roleLevel من الخادم مباشرة كما هو (راجع UserModel.fromJson)، فلا
-      // تأثير لهذا التغيير على أي بيانات فعلية.
-      roleLevel: isAdmin ? 2 : 0,
       location: userLocationDisplay,
       pricesCount: isAdmin ? 0 : 45,
       ratingsCount: isAdmin ? 0 : 56,
       reportsCount: isAdmin ? 0 : 3,
-      // ✅ جديد — تاريخ إنشاء الحساب (يطابق عمود User.created_at الفعلي).
-      // في وضع العرض التجريبي لا يوجد تاريخ تسجيل حقيقي محفوظ، فيُستخدَم
-      // الوقت الحالي كأقرب قيمة منطقية بدل تركه فارغاً بلا أي عرض.
-      createdAt: DateTime.now(),
     );
     _setUser(mockUser, isAdmin: isAdmin);
     return true;
@@ -531,6 +504,7 @@ class ProductProvider extends ChangeNotifier {
   Future<bool> createProduct({
     required String name,
     required String category,
+    required String unit,
   }) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 400));
@@ -543,7 +517,7 @@ class ProductProvider extends ChangeNotifier {
           officialPrice: 0,
           realPrice: 0,
           avgPrice: 0,
-          unit: '',
+          unit: unit,
           pricesCount: 0,
           changePercent: 0,
           isPriceUp: false,
@@ -553,49 +527,9 @@ class ProductProvider extends ChangeNotifier {
       return true;
     }
     try {
-      final p = await _service.createProduct(name: name, category: category);
+      final p = await _service.createProduct(
+          name: name, category: category, unit: unit);
       _products = [..._products, p];
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      _errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — تعديل منتج موجود، مطابقةً لعنصر "تعديل" الناقص سابقاً ضمن
-  /// مخطط حالات الاستخدام لـ"إدارة المنتجات".
-  Future<bool> updateProduct(
-    String id, {
-    required String name,
-    required String category,
-  }) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 400));
-      _products = _products
-          .map((p) => p.id == id
-              ? ProductModel(
-                  id: id,
-                  name: name,
-                  category: category,
-                  officialPrice: p.officialPrice,
-                  realPrice: p.realPrice,
-                  avgPrice: p.avgPrice,
-                  unit: p.unit,
-                  pricesCount: p.pricesCount,
-                  changePercent: p.changePercent,
-                  isPriceUp: p.isPriceUp,
-                )
-              : p)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final updated =
-          await _service.updateProduct(id, name: name, category: category);
-      _products = _products.map((p) => p.id == id ? updated : p).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -692,23 +626,13 @@ class StoreProvider extends ChangeNotifier {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — أُضيف الوسيط الاختياري [locationId]: معرّف الموقع
-  // الحقيقي المطابق للحي المختار (يُحسَب في AddStoreScreen قبل الاستدعاء
-  // عبر CatalogProvider.locationIdForArea). في وضع العرض التجريبي يبقى
-  // غير مستخدَم — المتجر يُبنى محلياً بالاسم النصي [area]/[sector] كما كان
-  // تماماً، فلا أي تغيير على تجربة العرض التجريبي أو شكلها.
-  //
-  // في الوضع الحقيقي أصبح locationId إلزامياً فعلياً (وليس فقط شكلياً)
-  // لأن جدول Store في قاعدة البيانات الفعلية يتطلب location_id (مفتاح
-  // أجنبي)، لا نصوص حرة area/sector كما كان يُرسَل سابقاً.
-  // ══════════════════════════════════════════════════════════════════════
+  /// ✅ جديد — يُستخدم من ميزة "اقتراح متجر جديد" المتاحة للمستخدم العادي
+  /// (POST /stores موثّقة أصلاً في API_DOCUMENTATION.md لهذا الغرض بالذات)
   Future<bool> createStore({
     required String name,
     required String address,
     required String area,
     required String sector,
-    String? locationId,
   }) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -726,14 +650,9 @@ class StoreProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     }
-    if (locationId == null || locationId.isEmpty) {
-      _errorMessage = 'تعذّر تحديد الموقع، حاول اختيار المنطقة مجدداً';
-      notifyListeners();
-      return false;
-    }
     try {
       final s = await _service.createStore(
-          locationId: locationId, name: name, address: address);
+          name: name, address: address, area: area, sector: sector);
       _stores = [..._stores, s];
       notifyListeners();
       return true;
@@ -759,35 +678,6 @@ class StoreProvider extends ChangeNotifier {
       _stores = _stores
           .map((s) => s.id == id ? s.copyWith(isVerified: verified) : s)
           .toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      _errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — تعديل بيانات متجر (استخدام إداري)، مطابقةً لعنصر "تعديل"
-  /// في مخطط حالات الاستخدام لـ"إدارة المتاجر".
-  Future<bool> updateStore(
-    String id, {
-    required String name,
-    required String address,
-    String? locationId,
-  }) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 400));
-      _stores = _stores
-          .map((s) => s.id == id ? s.copyWith(name: name, address: address) : s)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final updated = await _service.updateStore(id,
-          name: name, address: address, locationId: locationId);
-      _stores = _stores.map((s) => s.id == id ? updated : s).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -929,19 +819,14 @@ class PriceProvider extends ChangeNotifier {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — أُعيدت تسمية الوسيطَين [unit]/[brand] النصيَّين إلى
-  // [unitId]/[brandId] (معرّفان حقيقيان)، و[quantity] بقي كاسم داخلي للـ
-  // Dart لكن يُرسَل الآن للخادم تحت مفتاح amount (اسم العمود الفعلي في
-  // قاعدة البيانات). راجع نفس الملاحظة الكاملة في PriceService.submitPrice.
-  // ══════════════════════════════════════════════════════════════════════
+  /// POST /prices — من شاشة "إضافة سعر"
   Future<bool> submitPrice({
     required String productId,
     required String storeId,
     required double price,
-    required String unitId,
+    required String unit,
     required double quantity,
-    required String brandId,
+    String? brand,
   }) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 800));
@@ -952,9 +837,9 @@ class PriceProvider extends ChangeNotifier {
         productId: productId,
         storeId: storeId,
         price: price,
-        unitId: unitId,
-        amount: quantity,
-        brandId: brandId,
+        unit: unit,
+        quantity: quantity,
+        brand: brand,
       );
       return true;
     } on ApiException catch (e) {
@@ -994,16 +879,8 @@ class PriceProvider extends ChangeNotifier {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — حلّت محل review(approve/reject) السابقة. جدول Price في
-  // قاعدة البيانات الفعلية (Waffir_Database.txt) لا يحتوي عمود status
-  // إطلاقاً، فلا يوجد أي مكان حقيقي لحفظ حالة "مقبول/مرفوض". مخطط حالات
-  // الاستخدام يُدرج "حذف السعر" صراحة كالإجراء الإداري الوحيد ضمن "مراجعة
-  // الأسعار" — فأصبح الحذف النهائي هو مسار المراجعة الفعلي المتوافق مع
-  // كل من المخطط وقاعدة البيانات معاً.
-  // ══════════════════════════════════════════════════════════════════════
-  /// DELETE /prices/{id} — حذف سعر (مراجعة إدارية)
-  Future<bool> deletePrice(String id) async {
+  /// PATCH /prices/{id}/approve أو /reject — مراجعة إدارية
+  Future<bool> review(String id, {required bool approve}) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 400));
       _entries = _entries.where((e) => e.id != id).toList();
@@ -1011,7 +888,7 @@ class PriceProvider extends ChangeNotifier {
       return true;
     }
     try {
-      await _priceService.deletePrice(id);
+      await _priceService.reviewPrice(id, approve: approve);
       _entries = _entries.where((e) => e.id != id).toList();
       notifyListeners();
       return true;
@@ -1043,18 +920,20 @@ class ReportProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get isLoading => _state == LoadingState.loading;
 
-  Future<void> loadReports() async {
+  Future<void> loadReports({String? status}) async {
     _state = LoadingState.loading;
     notifyListeners();
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
-      _reports = MockData.reports;
+      _reports = status == null || status == 'الكل'
+          ? MockData.reports
+          : MockData.reports.where((r) => r.status == status).toList();
       _state = LoadingState.success;
       notifyListeners();
       return;
     }
     try {
-      final response = await _service.getReports();
+      final response = await _service.getReports(status: status);
       _reports = response.data ?? [];
       _state = LoadingState.success;
     } on ApiException catch (e) {
@@ -1086,17 +965,21 @@ class ReportProvider extends ChangeNotifier {
     }
   }
 
-  /// DELETE /reports/{id} — حذف البلاغ نهائياً.
-  Future<bool> deleteReport(String id) async {
+  /// PATCH /reports/{id} — استخدام إداري
+  Future<bool> updateStatus(String id, String status) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
-      _reports = _reports.where((r) => r.id != id).toList();
+      _reports = _reports
+          .map((r) => r.id == id ? r.copyWith(status: status) : r)
+          .toList();
       notifyListeners();
       return true;
     }
     try {
-      await _service.deleteReport(id);
-      _reports = _reports.where((r) => r.id != id).toList();
+      await _service.updateReportStatus(id, status);
+      _reports = _reports
+          .map((r) => r.id == id ? r.copyWith(status: status) : r)
+          .toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -1123,7 +1006,6 @@ class CatalogProvider extends ChangeNotifier {
   List<UnitModel> units = [];
   List<BrandModel> brands = [];
   List<LocationModel> locations = [];
-  List<SectorModel> sectors = [];
   Map<String, dynamic> dashboardStats = {};
   List<Map<String, dynamic>> recentActivity = [];
   bool isLoading = false;
@@ -1154,24 +1036,10 @@ class CatalogProvider extends ChangeNotifier {
     }
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل [productName]/[unit] كنصوص
-  // حرة (من TextField في لوحة الإدارة) وترسلهما مباشرة، رغم أن مخطط قاعدة
-  // البيانات الفعلي لجدول OfficialPrice لا يحتوي أي عمود نصي لاسم المنتج
-  // أو الوحدة — فقط product_id/unit_id (مفتاحان أجنبيان). أي اسم مكتوب
-  // يدوياً كان سيبقى بلا أي ربط حقيقي بجدول Product/Unit.
-  //
-  // الآن تستقبل معرّفين حقيقيين (productId/unitId، يُختاران من قوائم
-  // منتجات/وحدات موجودة فعلاً)، مع [productName]/[unitName] كوسيطين
-  // إضافيين يُستخدَمان فقط لبناء عنصر العرض الفوري محلياً في وضع العرض
-  // التجريبي — لا يُرسَلان للخادم إطلاقاً في الوضع الحقيقي.
-  // ══════════════════════════════════════════════════════════════════════
   Future<bool> addOfficialPrice({
-    required String productId,
     required String productName,
-    required String unitId,
-    required String unitName,
-    required double amount,
+    required String unit,
+    required double quantity,
     required double price,
   }) async {
     if (AppConfig.useMockData) {
@@ -1180,11 +1048,9 @@ class CatalogProvider extends ChangeNotifier {
         ...officialPrices,
         OfficialPrice(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
-          productId: productId,
           productName: productName,
-          unitId: unitId,
-          unit: unitName,
-          quantity: amount,
+          unit: unit,
+          quantity: quantity,
           price: price,
           updatedAt: DateTime.now(),
         ),
@@ -1194,71 +1060,11 @@ class CatalogProvider extends ChangeNotifier {
     }
     try {
       final op = await _service.createOfficialPrice(
-          productId: productId, unitId: unitId, amount: amount, price: price);
+          productName: productName,
+          unit: unit,
+          quantity: quantity,
+          price: price);
       officialPrices = [...officialPrices, op];
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — تعديل سعر رسمي موجود، مطابقةً لعنصر "تعديل" في مخطط حالات
-  /// الاستخدام لـ"إدارة الأسعار الرسمية".
-  Future<bool> updateOfficialPrice(
-    String id, {
-    required String productId,
-    required String productName,
-    required String unitId,
-    required String unitName,
-    required double amount,
-    required double price,
-  }) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 400));
-      officialPrices = officialPrices
-          .map((op) => op.id == id
-              ? OfficialPrice(
-                  id: id,
-                  productId: productId,
-                  productName: productName,
-                  unitId: unitId,
-                  unit: unitName,
-                  quantity: amount,
-                  price: price,
-                  updatedAt: DateTime.now())
-              : op)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final updated = await _service.updateOfficialPrice(id,
-          productId: productId, unitId: unitId, amount: amount, price: price);
-      officialPrices =
-          officialPrices.map((op) => op.id == id ? updated : op).toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — حذف سعر رسمي، مطابقةً لعنصر "حذف" في نفس المخطط.
-  Future<bool> deleteOfficialPrice(String id) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      officialPrices = officialPrices.where((op) => op.id != id).toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      await _service.deleteOfficialPrice(id);
-      officialPrices = officialPrices.where((op) => op.id != id).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -1341,33 +1147,6 @@ class CatalogProvider extends ChangeNotifier {
     }
   }
 
-  /// ✅ جديد — كانت هذه العملية معطَّلة سابقاً (نافذة "قيد التطوير") لعدم
-  /// وجود endpoint موثّق؛ أصبح موثّقاً الآن (راجع CatalogService.updateUnit)
-  /// مطابقةً لعنصر "تعديل" في مخطط حالات الاستخدام لـ"إدارة الوحدات".
-  Future<bool> updateUnit(String id, String name) async {
-    if (name.trim().isEmpty) return false;
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      units = units
-          .map((u) => u.id == id
-              ? UnitModel(id: id, name: name, usageCount: u.usageCount)
-              : u)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final updated = await _service.updateUnit(id, name);
-      units = units.map((u) => u.id == id ? updated : u).toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
   Future<bool> deleteUnit(String id) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 300));
@@ -1425,31 +1204,6 @@ class CatalogProvider extends ChangeNotifier {
     try {
       final b = await _service.createBrand(name);
       brands = [...brands, b];
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — تعديل علامة تجارية موجودة (نفس منطق updateUnit أعلاه).
-  Future<bool> updateBrand(String id, String name) async {
-    if (name.trim().isEmpty) return false;
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      brands = brands
-          .map((b) => b.id == id
-              ? BrandModel(id: id, name: name, productsCount: b.productsCount)
-              : b)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final updated = await _service.updateBrand(id, name);
-      brands = brands.map((b) => b.id == id ? updated : b).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -1521,191 +1275,9 @@ class CatalogProvider extends ChangeNotifier {
       return true;
     }
     try {
-      final sectorId = sectorIdForName(sector);
-      if (sectorId == null) return false;
-      final l =
-          await _service.createLocation(sectorId: sectorId, district: area);
+      final l = await _service.createLocation(
+          sector: sector, area: area, landmark: landmark);
       locations = [...locations, l];
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — تعديل موقع/حي موجود، مطابقةً لعنصر "تعديل" في مخطط حالات
-  /// الاستخدام لـ"إدارة المواقع والكتل".
-  Future<bool> updateLocation(
-    String id, {
-    required String sector,
-    required String area,
-    required String landmark,
-  }) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 400));
-      locations = locations
-          .map((l) => l.id == id
-              ? LocationModel(
-                  id: id,
-                  sector: sector,
-                  area: area,
-                  landmark: landmark,
-                  storesCount: l.storesCount)
-              : l)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final sectorId = sectorIdForName(sector);
-      if (sectorId == null) return false;
-      final updated =
-          await _service.updateLocation(id, sectorId: sectorId, district: area);
-      locations = locations.map((l) => l.id == id ? updated : l).toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — حذف موقع/حي، مطابقةً لعنصر "حذف" في نفس المخطط.
-  Future<bool> deleteLocation(String id) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      locations = locations.where((l) => l.id != id).toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      await _service.deleteLocation(id);
-      locations = locations.where((l) => l.id != id).toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  // ══════════════════════════════════════════════════════════════════════
-  // ✅ جديد — يبحث عن location_id الحقيقي المطابق لاسم حي معيّن ضمن قائمة
-  // المواقع المُحمَّلة من الخادم (locations، عبر loadLocations أعلاه).
-  //
-  // يُستخدم عند التسجيل (RegisterScreen) أو اقتراح متجر جديد (AddStoreScreen)
-  // لترجمة اختيار (الكتلة، الحي) القادم من منتقي الموقع الثابت
-  // (AleppoBlocks — يبقى كما هو تماماً في الواجهة، بلا أي تغيير مرئي) إلى
-  // location_id فعلي قبل الإرسال للـ backend. هذا ممكن لأن جدول Location
-  // في قاعدة البيانات الفعلية يُبنى بنفس أسماء الأحياء المستخدمة في
-  // AleppoBlocks تماماً (تم التحقق من هذا التطابق يدوياً على عيّنة البيانات
-  // المُدرَجة في قاعدة البيانات).
-  //
-  // يُعيد null إن لم توجد قائمة المواقع بعد (لم تُحمَّل) أو لم يوجد الحي
-  // ضمنها إطلاقاً — الشاشات المستدعية تعرض رسالة خطأ واضحة في هذه الحالة
-  // بدل إرسال طلب بمعرّف فارغ للخادم.
-  // ══════════════════════════════════════════════════════════════════════
-  String? locationIdForArea(String area) {
-    final trimmed = area.trim();
-    if (trimmed.isEmpty) return null;
-    for (final loc in locations) {
-      if (loc.area.trim() == trimmed) return loc.id;
-    }
-    return null;
-  }
-
-  Future<void> loadSectors() async {
-    if (AppConfig.useMockData) {
-      sectors = AleppoBlocks.all
-          .map((b) => SectorModel(id: b.number.toString(), name: b.name))
-          .toList();
-      notifyListeners();
-      return;
-    }
-    try {
-      sectors = await _service.getSectors();
-      notifyListeners();
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-    }
-  }
-
-  String? sectorIdForName(String name) {
-    final sector = sectors.where((s) => s.name == name).firstOrNull;
-    if (sector != null) return sector.id;
-    final location = locations.where((l) => l.sector == name).firstOrNull;
-    return location?.sectorId;
-  }
-
-  Future<bool> addSector(String name, {String description = ''}) async {
-    if (name.trim().isEmpty) return false;
-    if (AppConfig.useMockData) {
-      sectors = [
-        ...sectors,
-        SectorModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          name: name.trim(),
-          description: description,
-        ),
-      ];
-      notifyListeners();
-      return true;
-    }
-    try {
-      sectors = [
-        ...sectors,
-        await _service.createSector(name: name.trim(), description: description)
-      ];
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  Future<bool> updateSector(String oldName, String newName) async {
-    final sector = sectors.where((s) => s.name == oldName).firstOrNull;
-    if (sector == null) return false;
-    if (AppConfig.useMockData) {
-      sectors = sectors
-          .map((s) => s.id == sector.id
-              ? SectorModel(id: s.id, name: newName, description: s.description)
-              : s)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final updated = await _service.updateSector(sector.id,
-          name: newName, description: sector.description);
-      sectors = sectors.map((s) => s.id == sector.id ? updated : s).toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  Future<bool> deleteSector(String name) async {
-    final sector = sectors.where((s) => s.name == name).firstOrNull;
-    if (sector == null) return false;
-    if (AppConfig.useMockData) {
-      sectors = sectors.where((s) => s.id != sector.id).toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      await _service.deleteSector(sector.id);
-      sectors = sectors.where((s) => s.id != sector.id).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -1762,12 +1334,6 @@ class AdminUsersProvider extends ChangeNotifier {
   List<UserModel> users = [];
   bool isLoading = false;
   String? errorMessage;
-
-  /// ✅ جديد — قائمة المسؤولين فقط (role == 'admin')، تُستخدم في شاشة
-  /// "عرض المسؤولين" الجديدة ضمن الإعدادات (راجع مخطط حالات الاستخدام:
-  /// عرض المسؤولين --extend--> إضافة/تعديل/بحث/حذف مسؤول). تُشتقّ من نفس
-  /// [users] المُحمَّلة عبر loadUsers، فلا حاجة لطلب شبكة منفصل.
-  List<UserModel> get admins => users.where((u) => u.role == 'admin').toList();
 
   Future<void> loadUsers({String? search, String? status}) async {
     isLoading = true;
@@ -1831,127 +1397,6 @@ class AdminUsersProvider extends ChangeNotifier {
       await _service.setUserRole(id, role);
       users =
           users.map((u) => u.id == id ? u.copyWith(role: role) : u).toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — إضافة مستخدم جديد مباشرة من لوحة الإدارة، مطابقةً لعنصر
-  /// "إضافة" ضمن الأفعال الموحّدة في مخطط حالات الاستخدام لـ"إدارة
-  /// المستخدمين". [role] اختياري ('admin' عند استخدامها من شاشة "عرض
-  /// المسؤولين" لإنشاء حساب مسؤول جديد مباشرة).
-  Future<bool> createUser({
-    required String name,
-    required String phone,
-    required String password,
-    required String locationId,
-    String role = 'user',
-  }) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 400));
-      users = [
-        ...users,
-        UserModel(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          name: name,
-          phone: phone,
-          role: role,
-          // ✅ جديد — يُبقي roleLevel متسقاً مع role النصي عند الإنشاء من
-          // لوحة الإدارة (بنفس منطق loginMock أعلاه)، بدل تركه صفراً
-          // افتراضياً حتى مع role == 'admin'.
-          roleLevel: role == 'admin' ? 1 : 0,
-          isActive: true,
-          // ✅ جديد — تاريخ إنشاء الحساب الفعلي لحظة إضافته من لوحة الإدارة.
-          createdAt: DateTime.now(),
-        ),
-      ];
-      notifyListeners();
-      return true;
-    }
-    try {
-      final u = await _service.createUser(
-          name: name,
-          phone: phone,
-          password: password,
-          locationId: locationId,
-          role: role);
-      users = [...users, u];
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ محدَّث — تعديل بيانات مستخدم (الاسم، ورقم الهاتف، وكلمة المرور
-  /// اختيارياً)، مطابقةً لعنصر "تعديل" ضمن الأفعال الموحّدة التي يُدرجها
-  /// مخطط حالات الاستخدام لكل من "إدارة المستخدمين" و"عرض المسؤولين"
-  /// (كلتاهما تعتمدان على نفس هذا الـ Provider، راجع AdminAdminsScreen في
-  /// admin_shell.dart).
-  ///
-  /// ✅ [phone] اختياري: يتيح لنافذة "تعديل معلومات المسؤول" تحديث رقم
-  /// الهاتف مع الاسم دفعة واحدة. في وضع العرض التجريبي يُحدَّث محلياً فوراً
-  /// عبر UserModel.copyWith، وفي الوضع الحقيقي يُمرَّر إلى
-  /// AdminUserService.updateUser ليُرسَل للخادم. ترك [phone] فارغاً أو null
-  /// يُبقي رقم الهاتف الحالي كما هو دون أي تغيير.
-  ///
-  /// ✅ [password] اختياري أيضاً: عند تمريره غير فارغ يُرسَل مع نفس الطلب
-  /// لتحديث كلمة مرور المستخدم/المسؤول في نفس العملية (راجع
-  /// AdminUserService.updateUser). في وضع العرض التجريبي لا توجد كلمة مرور
-  /// فعلية محفوظة محلياً، فيُتجاهَل الحقل بأمان دون أي تأثير على الحالة.
-  ///
-  /// ℹ️ ملاحظة دمج — AdminUserService.updateUser يدعم أيضاً [locationId]
-  /// اختيارياً على مستوى الخدمة (لتعديل موقع المستخدم)، لكنه لم يُمرَّر بعد
-  /// من هذا الـ Provider لأن أي شاشة إدارية حالية لا تطلبه. يمكن إضافته هنا
-  /// بنفس النمط عند الحاجة مستقبلاً دون أي تعديل إضافي على طبقة الخدمة.
-  Future<bool> updateUser(
-    String id, {
-    required String name,
-    String? phone,
-    String? password,
-  }) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 400));
-      users = users
-          .map((u) => u.id == id
-              ? u.copyWith(
-                  name: name,
-                  phone: (phone != null && phone.isNotEmpty) ? phone : null)
-              : u)
-          .toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      final updated = await _service.updateUser(id,
-          name: name, phone: phone, password: password);
-      users = users.map((u) => u.id == id ? updated : u).toList();
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      errorMessage = e.message;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// ✅ جديد — حذف مستخدم نهائياً، مطابقةً لعنصر "حذف" في نفس المخطط.
-  Future<bool> deleteUser(String id) async {
-    if (AppConfig.useMockData) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      users = users.where((u) => u.id != id).toList();
-      notifyListeners();
-      return true;
-    }
-    try {
-      await _service.deleteUser(id);
-      users = users.where((u) => u.id != id).toList();
       notifyListeners();
       return true;
     } on ApiException catch (e) {

@@ -19,8 +19,6 @@ class AppRoutes {
   static const String officialPrices = '/official-prices';
   // ✅ جديد — سجل تغييرات مادة واحدة من الأسعار الرسمية
   static const String officialPriceHistory = '/official-price-history';
-  // ✅ جديد — اقتراح متجر جديد من شاشة "المتاجر"
-  static const String addStore = '/add-store';
 
   // Legal
   static const String privacyPolicy = '/privacy-policy';

@@ -56,26 +56,11 @@ class ProductService {
   Future<ProductModel> createProduct({
     required String name,
     required String category,
+    required String unit,
   }) {
     return _api.post<ProductModel>(
       '/products',
-      data: {'name': name, 'category': category},
-      fromJson: (json) =>
-          ProductModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
-    );
-  }
-
-  /// PUT /products/{id} — ✅ جديد — تعديل منتج موجود (استخدام إداري)،
-  /// مطابقةً لعنصر "تعديل" الناقص سابقاً ضمن الأفعال الموحّدة في مخطط
-  /// حالات الاستخدام لـ"إدارة المنتجات".
-  Future<ProductModel> updateProduct(
-    String id, {
-    required String name,
-    required String category,
-  }) {
-    return _api.put<ProductModel>(
-      '/products/$id',
-      data: {'name': name, 'category': category},
+      data: {'name': name, 'category': category, 'unit': unit},
       fromJson: (json) =>
           ProductModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),
     );

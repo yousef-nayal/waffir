@@ -53,7 +53,7 @@ Future<void> showLocationPickerSheet(
                             fontWeight: FontWeight.w700,
                             color: AppColors.textPrimaryOf(ctx))),
                     const SizedBox(height: 2),
-                    Text('اختر الكتلة  ثم المنطقة التابع لها',
+                    Text('اختر الكتلة الإدارية ثم الحي التابع لها',
                         style: TextStyle(
                             fontSize: 12,
                             color: AppColors.textSecondaryOf(ctx))),
@@ -110,7 +110,7 @@ Future<void> showLocationPickerSheet(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
                                 color: AppColors.textPrimaryOf(ctx))),
-                        subtitle: Text('${block.areas.length} منطقة',
+                        subtitle: Text('${block.areas.length} حي',
                             style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.textSecondaryOf(ctx))),
@@ -555,17 +555,13 @@ Future<bool?> showConfirmDialog(
 }
 
 // ── Add Dialog ────────────────────────────────────────────────────────────────
-// ✅ محدَّث — أُضيف [initialValue] اختياري ليُستخدَم أيضاً كنافذة "تعديل"
-// موحّدة (تعبئة الحقل بالقيمة الحالية) بدل الاقتصار على الإضافة فقط.
 Future<String?> showAddDialog(
   BuildContext context, {
   required String title,
   required String fieldLabel,
   required String hint,
-  String? initialValue,
-  String confirmLabel = 'إضافة',
 }) {
-  final ctrl = TextEditingController(text: initialValue ?? '');
+  final ctrl = TextEditingController();
   return showDialog<String>(
     context: context,
     builder: (ctx) => Directionality(
@@ -614,7 +610,7 @@ Future<String?> showAddDialog(
                     minimumSize: const Size(0, 44),
                     padding: EdgeInsets.zero,
                   ),
-                  child: Text(confirmLabel),
+                  child: const Text('إضافة'),
                 ),
               ),
             ],

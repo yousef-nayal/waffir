@@ -16,6 +16,7 @@ class PriceService {
     return _api.get<ApiResponse<List<PriceEntry>>>(
       '/prices',
       queryParameters: {
+        if (status != null && status != 'الكل') 'status': status,
         'page': page,
         'per_page': perPage,
       },
@@ -26,22 +27,14 @@ class PriceService {
     );
   }
 
-  // ══════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل unit كنص حر (مثل 'كغ') وترسله
-  // مباشرة، رغم أن عمود Price.unit_id في قاعدة البيانات الفعلي هو مفتاح
-  // أجنبي إلزامي يشير لجدول Unit، لا نص حر. كما كان اسم الحقل المُرسَل
-  // 'quantity' بينما العمود الفعلي في قاعدة البيانات اسمه amount.
-  //
-  // الآن تستقبل unitId (معرّف حقيقي مُختار من قائمة الوحدات الفعلية)
-  // وbrandId (اختياري، نفس المنطق)، وترسل amount بدل quantity.
-  // ══════════════════════════════════════════════════════════════════
+  /// POST /prices — إرسال سعر جديد من مستخدم (شاشة إضافة سعر)
   Future<PriceEntry> submitPrice({
     required String productId,
     required String storeId,
     required double price,
-    required String unitId,
-    required double amount,
-    required String brandId,
+    required String unit,
+    required double quantity,
+    String? brand,
   }) {
     return _api.post<PriceEntry>(
       '/prices',
@@ -49,9 +42,9 @@ class PriceService {
         'product_id': productId,
         'store_id': storeId,
         'price': price,
-        'unit_id': unitId,
-        'amount': amount,
-        'brand_id': brandId,
+        'unit': unit,
+        'quantity': quantity,
+        if (brand != null && brand.isNotEmpty) 'brand': brand,
       },
       fromJson: (json) =>
           PriceEntry.fromJson((json as Map<String, dynamic>)['data'] ?? json),
@@ -63,14 +56,9 @@ class PriceService {
     return _api.post<void>('/prices/$id/vote', data: {'is_up': isUp});
   }
 
-  /// DELETE /prices/{id} — ✅ جديد — (استخدام إداري) حذف سعر نهائياً.
-  /// حلّت محل reviewPrice (موافقة/رفض) السابقة: جدول Price في قاعدة
-  /// البيانات الفعلية لا يحتوي عمود status إطلاقاً (راجع
-  /// Waffir_Database.txt)، فلا وجود فعلي لحالة "قيد المراجعة/مقبول/مرفوض"
-  /// يمكن حفظها. مخطط حالات الاستخدام يُدرج "حذف السعر" صراحة كالإجراء
-  /// الوحيد المطلوب ضمن "مراجعة الأسعار" — فأصبح الحذف هو مسار المراجعة
-  /// الإدارية الفعلي (حذف أي سعر خاطئ/مضلِّل يكتشفه المسؤول أثناء المراجعة).
-  Future<void> deletePrice(String id) {
-    return _api.delete<void>('/prices/$id');
+  /// PATCH /prices/{id}/approve أو /reject — (استخدام إداري)
+  Future<void> reviewPrice(String id, {required bool approve}) {
+    final action = approve ? 'approve' : 'reject';
+    return _api.patch<void>('/prices/$id/$action');
   }
 }

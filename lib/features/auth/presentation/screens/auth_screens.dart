@@ -5,7 +5,6 @@ import '../../../../core/utils/app_provider.dart';
 import '../../../../core/constants/app_routes.dart';
 import '../../../../core/constants/aleppo_blocks.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/common_widgets.dart';
 
 // ══════════════════════════════════════════════════════════════════════════
 // عناصر مشتركة لكل شاشات المصادقة (تصميم موحّد واحترافي)
@@ -331,22 +330,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
 // ══════════════════════════════════════════════════════════════════════════
 // REGISTER
-// ══════════════════════════════════════════════════════════════════════════════
-// ✅ إصلاح جوهري جديد — كان اختيار الموقع هنا يعتمد على قائمتين منسدلتين
-// منفصلتين ومتتاليتين: "الكتلة" ثم "الحي" (cascading dropdown)، بشكل مختلف
-// تماماً عن بقية شاشات التطبيق (AddPriceScreen، AddStoreScreen، شريحة
-// الموقع بالصفحة الرئيسية، صف "تغيير الموقع" بالإعدادات) التي توحّدت جميعها
-// على نفس منتقي الموقع (showLocationPickerSheet من common_widgets.dart):
-// حقل واحد "الكتلة والمنطقة" يفتح نافذة سفلية تعرض الكتل الخمس قابلة للطي،
-// كل كتلة تُظهر أحياءها عند فتحها، ويُختار الحي مباشرة من داخلها.
-//
-// الآن أصبحت شاشة "إنشاء حساب" تستخدم نفس هذا المنتقي الموحّد بالضبط —
-// حقل واحد فقط يجمع الكتلة والمنطقة معاً، وحُذف سطر "المنطقة" المنفصل
-// نهائياً، بما يطابق تماماً هوية بقية التطبيق. باقي منطق الشاشة (تحميل
-// المواقع الحقيقية من الخادم وترجمة الحي إلى location_id عبر
-// CatalogProvider.locationIdForArea قبل الإرسال) بقي كما هو تماماً بلا أي
-// تغيير.
-// ══════════════════════════════════════════════════════════════════════════════
+// ✅ إصلاح جوهري: اختيار "المنطقة" كان قائمة مسطحة واحدة من 12 حياً وهمياً
+// لا تطابق التقسيم الإداري الرسمي لحلب (الكتل الخمس). الآن حقلان متتاليان:
+//   1) "الكتلة الإدارية" — إحدى الكتل الخمس الرسمية (aleppo_blocks.dart)
+//   2) "الحي" — يُبنى تلقائياً حسب الكتلة المختارة فقط (cascading dropdown)،
+//      ويُعاد ضبطه تلقائياً كلما تغيّرت الكتلة لمنع اختيار حي لا ينتمي إليها.
+// ══════════════════════════════════════════════════════════════════════════
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -364,40 +353,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscure = true;
   bool _obscureConfirm = true;
 
-  // ✅ محدَّث — الكتلة والمنطقة أصبحتا حقلاً واحداً يُختاران معاً عبر
-  // منتقي الموقع الموحّد (نفس نمط بقية شاشات التطبيق)، بدل قائمتين
-  // منسدلتين منفصلتين. تبقيان null حتى يختار المستخدم فعلياً.
-  String? _selectedBlock;
-  String? _selectedArea;
+  // ✅ الكتلة الإدارية المختارة، والحي التابع لها (يُعاد بناؤه ديناميكياً)
+  late String _selectedBlock = AleppoBlocks.all.first.name;
+  late String _selectedArea = AleppoBlocks.all.first.areas.first;
 
-  @override
-  void initState() {
-    super.initState();
-    // ✅ جديد — تحميل قائمة المواقع الحقيقية من الخادم (GET /locations)
-    // فور فتح شاشة التسجيل، حتى تكون جاهزة لترجمة الحي المختار إلى
-    // location_id فعلي عند الضغط على "إنشاء حساب" لاحقاً، بدل انتظار
-    // الإرسال ثم اكتشاف عدم توفر البيانات.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final catalogProvider = context.read<CatalogProvider>();
-      if (catalogProvider.locations.isEmpty) {
-        catalogProvider.loadLocations();
-      }
+  void _onBlockChanged(String? block) {
+    if (block == null || block == _selectedBlock) return;
+    setState(() {
+      _selectedBlock = block;
+      // ✅ إعادة ضبط المنطقة تلقائياً على أول منطقة في الكتلة الجديدة، لمنع بقاء
+      // منطقة من الكتلة السابقة لا تنتمي إلى الكتلة المختارة حديثاً.
+      _selectedArea = AleppoBlocks.areasOfBlock(block).first;
     });
-  }
-
-  /// ✅ جديد — يفتح منتقي الموقع الموحّد (نفس المكوّن المستخدم في شريحة
-  /// الموقع بالصفحة الرئيسية، صف "تغيير الموقع" بالإعدادات، AddPriceScreen،
-  /// وAddStoreScreen)، ويستقبل الكتلة والمنطقة معاً عند الاختيار.
-  void _pickLocation() {
-    showLocationPickerSheet(
-      context,
-      currentBlock: _selectedBlock ?? '',
-      currentArea: _selectedArea ?? '',
-      onSelect: (block, area) => setState(() {
-        _selectedBlock = block;
-        _selectedArea = area;
-      }),
-    );
   }
 
   @override
@@ -411,28 +378,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    // ✅ جديد — التحقق من اختيار الكتلة والمنطقة معاً قبل المتابعة، بما أن
-    // الحقل أصبح اختيارياً شكلياً (بلا قيمة افتراضية مبدئية) حتى يفتح
-    // المستخدم منتقي الموقع بنفسه، بنفس أسلوب AddPriceScreen وAddStoreScreen.
-    if (_selectedBlock == null || _selectedArea == null) {
-      _showError(context, 'يرجى اختيار الكتلة الإدارية والمنطقة');
-      return;
-    }
     final provider = context.read<AppProvider>();
-    // ✅ جديد — ترجمة الحي المختار إلى location_id حقيقي قبل الإرسال. في
-    // وضع العرض التجريبي (AppConfig.useMockData) هذه القيمة تُتجاهَل تماماً
-    // داخل AppProvider.register، فلا تأثير لها على تجربة العرض التجريبي.
-    final locationId =
-        context.read<CatalogProvider>().locationIdForArea(_selectedArea!);
     setState(() => _isLoading = true);
     final phone = _phoneController.text.trim();
     final success = await provider.register(
       name: _nameController.text.trim(),
       phone: phone,
       password: _passwordController.text,
-      block: _selectedBlock!,
-      area: _selectedArea!,
-      locationId: locationId,
+      block: _selectedBlock,
+      area: _selectedArea,
     );
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -449,6 +403,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ الأحياء المتاحة تُشتق دوماً من الكتلة المختارة حالياً
+    final areasOfSelectedBlock = AleppoBlocks.areasOfBlock(_selectedBlock);
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
@@ -498,28 +455,54 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             : null,
                       ),
                       const SizedBox(height: 14),
-                      // ══════════════════════════════════════════════════
-                      // ✅ محدَّث — حقل واحد "الكتلة والمنطقة" يفتح منتقي
-                      // الموقع الموحّد، بدل قائمتين منسدلتين منفصلتين
-                      // ("الكتلة" ثم "المنطقة"). هذا يطابق تماماً نفس نمط
-                      // اختيار الموقع في بقية شاشات التطبيق.
-                      // ══════════════════════════════════════════════════
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 8, right: 4),
-                          child: Text('الكتلة والمنطقة',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color:
-                                      AppColors.textPrimaryOf(context))),
+                      // ✅ 1) الكتلة الإدارية
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedBlock,
+                        isDense: true,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textPrimaryOf(context),
+                          height: 1.3,
                         ),
+                        decoration: _fieldDecoration(context,
+                            label: 'الكتلة', icon: Icons.map_outlined),
+                        items: AleppoBlocks.blockNames
+                            .map((b) => DropdownMenuItem(
+                                  value: b,
+                                  child: Text(b,
+                                      style: const TextStyle(fontSize: 14)),
+                                ))
+                            .toList(),
+                        onChanged: _onBlockChanged,
                       ),
-                      _LocationPickerField(
-                        block: _selectedBlock,
-                        area: _selectedArea,
-                        onTap: _pickLocation,
+                      const SizedBox(height: 14),
+                      // ✅ 2) المنطقة — قائمته تتغيّر تلقائياً حسب الكتلة أعلاه.
+                      // مفتاح فريد يتضمن الكتلة المختارة يجبر Flutter على
+                      // إعادة بناء الحقل عند تغيّر الكتلة بدل الاحتفاظ بحالة
+                      // داخلية قديمة لا تتوافق مع القائمة الجديدة.
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(_selectedBlock),
+                        initialValue:
+                            areasOfSelectedBlock.contains(_selectedArea)
+                                ? _selectedArea
+                                : areasOfSelectedBlock.first,
+                        isDense: true,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textPrimaryOf(context),
+                          height: 1.3,
+                        ),
+                        decoration: _fieldDecoration(context,
+                            label: 'المنطقة', icon: Icons.location_on_outlined),
+                        items: areasOfSelectedBlock
+                            .map((a) => DropdownMenuItem(
+                                  value: a,
+                                  child: Text(a,
+                                      style: const TextStyle(fontSize: 14)),
+                                ))
+                            .toList(),
+                        onChanged: (v) =>
+                            setState(() => _selectedArea = v ?? _selectedArea),
                       ),
                       const SizedBox(height: 14),
                       TextFormField(
@@ -591,69 +574,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// ✅ جديد — نسخة محلية من نفس حقل اختيار الموقع الموحّد الموجود في بقية
-// شاشات التطبيق (products_screen.dart، add_store_screen.dart) — بنفس
-// الشكل والسلوك تماماً، لكن كعنصر خاص بهذا الملف لأن الأصل مُعرَّف بشكل
-// خاص (private) في كل ملف على حدة.
-// ══════════════════════════════════════════════════════════════════════════
-class _LocationPickerField extends StatelessWidget {
-  final String? block;
-  final String? area;
-  final VoidCallback onTap;
-
-  const _LocationPickerField({
-    required this.block,
-    required this.area,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasValue = block != null && area != null;
-    final label =
-        hasValue ? AleppoBlocks.displayLabel(block: block!, area: area!) : null;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceOf(context),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: hasValue ? AppColors.primary : AppColors.borderOf(context),
-              width: hasValue ? 1.4 : 1),
-        ),
-        child: Row(children: [
-          Icon(Icons.location_on_outlined,
-              size: 20,
-              color:
-                  hasValue ? AppColors.primary : AppColors.textHintOf(context)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label ?? 'اختر الكتلة الإدارية والمنطقة',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: hasValue ? FontWeight.w600 : FontWeight.w400,
-                color: hasValue
-                    ? AppColors.textPrimaryOf(context)
-                    : AppColors.textHintOf(context),
-              ),
-            ),
-          ),
-          Icon(Icons.keyboard_arrow_down,
-              size: 20, color: AppColors.textHintOf(context)),
-        ]),
       ),
     );
   }

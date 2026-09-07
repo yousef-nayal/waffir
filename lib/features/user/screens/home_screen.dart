@@ -299,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: AppColors.primary.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text('مقارنة مع السعر الرسمي',
+                        child: const Text('مقارنة رسمي',
                             style: TextStyle(
                                 fontSize: 11,
                                 color: AppColors.primary,

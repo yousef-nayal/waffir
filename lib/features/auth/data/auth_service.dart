@@ -15,7 +15,7 @@ class AuthService {
   }) async {
     final response = await _api.post<Map<String, dynamic>>(
       '/auth/login',
-      data: {'phone_number': phone, 'password': password},
+      data: {'phone': phone, 'password': password},
     );
     final result = AuthResult.fromJson(response);
     await _api.saveTokens(
@@ -25,30 +25,21 @@ class AuthService {
     return result;
   }
 
-  // ══════════════════════════════════════════════════════════════════
-  // ✅ إصلاح جوهري — كانت هذه الدالة تستقبل [sector] كنص حر مدمج بصيغة
-  // "الكتلة الخامسة - الفرقان" وترسله كما هو، رغم أن عمود User.location_id
-  // في قاعدة البيانات الفعلي مفتاح أجنبي إلزامي يشير لصف محدد في جدول
-  // Location — لا يوجد أي عمود نصي لتخزين "قطاع/كتلة" على جدول User
-  // إطلاقاً. إرسال نص حر بهذا الشكل لا يملك مكاناً حقيقياً ليُخزَّن فيه.
-  //
-  // الآن تستقبل locationId (معرّف حقيقي، يُحسَب في RegisterScreen عبر
-  // CatalogProvider.locationIdForArea) وترسله مباشرة بدل sector.
-  // ══════════════════════════════════════════════════════════════════
+  /// POST /auth/register
   Future<AuthResult> register({
     required String name,
     required String phone,
     required String password,
-    required String locationId,
+    required String sector,
   }) async {
     final response = await _api.post<Map<String, dynamic>>(
       '/auth/register',
       data: {
         'name': name,
-        'phone_number': phone,
+        'phone': phone,
         'password': password,
         'password_confirmation': password,
-        'location_id': locationId,
+        'sector': sector,
       },
     );
     final result = AuthResult.fromJson(response);
@@ -93,15 +84,14 @@ class AuthService {
       '/auth/profile',
       data: {'name': name},
     );
-    return UserModel.fromJson(
-        response['data'] as Map<String, dynamic>? ?? response);
+    return UserModel.fromJson(response['data'] as Map<String, dynamic>? ?? response);
   }
 
   /// POST /auth/forgot-password
   Future<void> forgotPassword(String phone) async {
     await _api.post<void>(
       '/auth/forgot-password',
-      data: {'phone_number': phone},
+      data: {'phone': phone},
     );
   }
 
@@ -112,7 +102,7 @@ class AuthService {
   }) async {
     await _api.post<void>(
       '/auth/verify-otp',
-      data: {'phone_number': phone, 'code': code},
+      data: {'phone': phone, 'code': code},
     );
   }
 
@@ -120,7 +110,7 @@ class AuthService {
   Future<void> resendOtp({required String phone}) async {
     await _api.post<void>(
       '/auth/resend-otp',
-      data: {'phone_number': phone},
+      data: {'phone': phone},
     );
   }
 
@@ -134,7 +124,7 @@ class AuthService {
     await _api.put<void>(
       '/auth/reset-password',
       data: {
-        'phone_number': phone,
+        'phone': phone,
         'code': code,
         'new_password': newPassword,
         'new_password_confirmation': newPassword,
@@ -160,8 +150,7 @@ class AuthService {
   /// GET /auth/me — جلب بيانات المستخدم الحالي (تُستخدم في السبلاش عند وجود توكن محفوظ)
   Future<UserModel> getCurrentUser() async {
     final response = await _api.get<Map<String, dynamic>>('/auth/me');
-    return UserModel.fromJson(
-        response['data'] as Map<String, dynamic>? ?? response);
+    return UserModel.fromJson(response['data'] as Map<String, dynamic>? ?? response);
   }
 
   Future<bool> hasSavedSession() => _api.hasValidSession();

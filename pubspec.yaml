@@ -17,6 +17,7 @@ dependencies:
   dio: ^5.4.0
   flutter_secure_storage: ^9.0.0
   shared_preferences: ^2.3.0   # ✅ مضاف لـ dark mode و location persistence
+  collection: ^1.18.0          # ✅ مضاف — يوفر firstOrNull المستخدمة في app_provider.dart
 
 dev_dependencies:
   flutter_test:

@@ -36,11 +36,15 @@ import '../../../../core/theme/app_theme.dart';
 
 class _AuthHeader extends StatelessWidget {
   final Widget icon;
+  final List<Color> gradientColors;
   final double height;
+  final bool showBack;
 
   const _AuthHeader({
     required this.icon,
+    this.gradientColors = const [Color(0xFF1D4ED8), Color(0xFF2563EB)],
     this.height = 210,
+    this.showBack = true,
   });
 
   @override
@@ -52,21 +56,22 @@ class _AuthHeader extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: const [Color(0xFF1D4ED8), Color(0xFF2563EB)],
+          colors: gradientColors,
         ),
       ),
       child: SafeArea(
         bottom: false,
         child: Stack(
           children: [
-            Positioned(
-              top: 4,
-              right: 4,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_forward, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
+            if (showBack)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_forward, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ),
-            ),
             Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
@@ -203,8 +208,9 @@ String _formatCountdown(int seconds) {
 // بين focus nodes متعددة، ويبقى موثوقاً 100% على كل الأجهزة.
 
 class _OtpBoxInput extends StatefulWidget {
+  final int length;
   final ValueChanged<String> onChanged;
-  const _OtpBoxInput({super.key, required this.onChanged});
+  const _OtpBoxInput({super.key, this.length = 6, required this.onChanged});
 
   @override
   State<_OtpBoxInput> createState() => _OtpBoxInputState();
@@ -255,7 +261,7 @@ class _OtpBoxInputState extends State<_OtpBoxInput> {
                 TextDirection.ltr, // ترتيب الأرقام دوماً من اليسار لليمين
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: List.generate(6, (i) {
+              children: List.generate(widget.length, (i) {
                 final text = _controller.text;
                 final filled = i < text.length;
                 final isCursor = i == text.length && _focusNode.hasFocus;
@@ -297,13 +303,13 @@ class _OtpBoxInputState extends State<_OtpBoxInput> {
                 textAlign: TextAlign.center,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(6),
+                  LengthLimitingTextInputFormatter(widget.length),
                 ],
                 decoration: const InputDecoration(border: InputBorder.none),
                 onChanged: (v) {
                   setState(() {});
                   widget.onChanged(v);
-                  if (v.length == 6) {
+                  if (v.length == widget.length) {
                     FocusScope.of(context).unfocus();
                   }
                 },

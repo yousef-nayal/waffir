@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/utils/app_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/mock_data.dart';
 import '../../../core/constants/app_routes.dart';
 import '../../../core/constants/aleppo_blocks.dart';
 import '../../../core/widgets/common_widgets.dart';
@@ -244,16 +245,6 @@ class _ProductCard extends StatelessWidget {
 // (التي لم تكن حتى مرتبطة بالمنتج المعروض). كما أُضيف تصويت فعلي
 // (إعجاب/عدم إعجاب) وزر بلاغ فعلي يفتحان الآن PriceProvider/ReportProvider
 // بدل أن يكونا مجرّد نص بلا استجابة.
-//
-// ✅ إصلاح جوهري إضافي — كانت الشاشة ترجع صامتاً إلى MockData.products.first
-// كلما وصل إليها المستخدم بلا وسيط (arguments) صالح من نوع ProductModel،
-// حتى في وضع الإنتاج (AppConfig.useMockData = false). هذا يعني أن أي خطأ
-// برمجي مستقبلي في مكان استدعاء Navigator.pushNamed (وسيط مفقود أو من نوع
-// خاطئ) كان سيُخفى تماماً بعرض منتج وهمي ("رز أبيض" الثابت) بدل كشف الخطأ،
-// وقد يعرض المستخدم لبيانات مضلِّلة (أسعار/تفاصيل منتج لا علاقة له بما
-// نقر عليه فعلياً). الآن: إن لم يصل وسيط صالح، تُعرض حالة خطأ صريحة بنفس
-// نمط OfficialPriceHistoryScreen، ولا يُستدعى تحميل الأسعار إطلاقاً بمعرّف
-// منتج وهمي.
 // ══════════════════════════════════════════════════════════════════════════════
 class ProductDetailScreen extends StatefulWidget {
   const ProductDetailScreen({super.key});
@@ -270,14 +261,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_initialized) {
-      final args = ModalRoute.of(context)?.settings.arguments;
-      _product = args is ProductModel ? args : null;
+      _product = ModalRoute.of(context)!.settings.arguments as ProductModel? ??
+          MockData.products.first;
       _initialized = true;
-      if (_product != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          context.read<PriceProvider>().loadProductPrices(_product!.id);
-        });
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<PriceProvider>().loadProductPrices(_product!.id);
+      });
     }
   }
 
@@ -290,11 +279,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final messenger = ScaffoldMessenger.of(context);
     // ══════════════════════════════════════════════════════════════════
     // ✅ جديد — reason.note يحمل النص الذي كتبه المستخدم (إجباري فقط عند
-    // اختيار "أخرى"، اختياري لبقية الأسباب). يُرسَل الآن تحت مفتاح
-    // description الفعلي عبر ReportService (راجع report_service.dart).
+    // اختيار "أخرى"، اختياري لبقية الأسباب). ملاحظة مهمة: ReportProvider
+    // .submitReport في نسخته الحالية (app_provider.dart) يستقبل فقط
+    // priceEntryId وtype، لذا هذا النص لن يصل فعلياً إلى الخادم حتى تُضاف
+    // معاملة note هناك (وربما حقل مطابق في ReportModel/ReportService و
+    // الـ backend). أرسل لي هذه الملفات إن أردت إكمال الربط حتى النهاية.
     // ══════════════════════════════════════════════════════════════════
-    final ok = await context.read<ReportProvider>().submitReport(
-        priceEntryId: entry.id, type: reason.type, note: reason.note);
+    final ok = await context
+        .read<ReportProvider>()
+        .submitReport(priceEntryId: entry.id, type: reason.type);
     if (!mounted) return;
     messenger.showSnackBar(SnackBar(
         content: Text(ok ? 'شكراً، تم إرسال بلاغك' : 'تعذّر إرسال البلاغ'),
@@ -303,39 +296,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ حالة خطأ صريحة بدل عرض منتج وهمي (MockData.products.first سابقاً)
-    // عند وصول وسيط غير صالح للشاشة — بنفس نمط OfficialPriceHistoryScreen.
-    if (_product == null) {
-      return Directionality(
-        textDirection: TextDirection.rtl,
-        child: Scaffold(
-          appBar: AppBar(
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_forward_ios, size: 18),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.error_outline, size: 40, color: AppColors.error),
-                  const SizedBox(height: 12),
-                  Text('تعذّر تحميل بيانات المنتج',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: AppColors.textSecondaryOf(context),
-                          fontSize: 14)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
     final product = _product!;
     final provider = context.watch<AppProvider>();
     final priceProvider = context.watch<PriceProvider>();
@@ -594,8 +554,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 // ══════════════════════════════════════════════════════════════════════════
 
 /// ✅ جديد — نتيجة النافذة: نوع البلاغ + نص توضيحي اختياري (إجباري فقط
-/// عند type == ReportType.wrongInfo، مطابقةً لقيد الـ CHECK الفعلي في
-/// قاعدة البيانات الذي يسمح بـ description حصراً مع هذا النوع).
+/// عند type == 'other').
 class _ReportReason {
   final String type;
   final String? note;
@@ -609,19 +568,11 @@ class _ReportOptionData {
   const _ReportOptionData(this.value, this.label, this.icon);
 }
 
-// ══════════════════════════════════════════════════════════════════════════
-// ✅ إصلاح جوهري — القيم الثلاث الحصرية الفعلية لعمود Report.type بقاعدة
-// البيانات (راجع ReportType في models.dart وWaffir_Database.txt)، بدل 4
-// مفاتيح إنجليزية داخلية سابقاً لم تكن تطابق قيد الـ CHECK في القاعدة
-// الحقيقية إطلاقاً (أي بلاغ قديم كان سيُرفَض فوراً من الخادم الحقيقي).
-// ══════════════════════════════════════════════════════════════════════════
 const List<_ReportOptionData> _reportOptions = [
-  _ReportOptionData(
-      ReportType.overpriced, 'سعر مبالغ فيه', Icons.warning_amber_outlined),
-  _ReportOptionData(
-      ReportType.wrongPrice, 'سعر غير صحيح', Icons.price_change_outlined),
-  _ReportOptionData(
-      ReportType.wrongInfo, 'معلومات غير صحيحة', Icons.info_outline),
+  _ReportOptionData('wrong_price', 'سعر غير صحيح', Icons.price_change_outlined),
+  _ReportOptionData('outdated', 'سعر قديم', Icons.history_toggle_off),
+  _ReportOptionData('duplicate', 'تكرار', Icons.copy_all_outlined),
+  _ReportOptionData('other', 'أخرى', Icons.more_horiz_outlined),
 ];
 
 class _ReportDialog extends StatefulWidget {
@@ -636,10 +587,7 @@ class _ReportDialogState extends State<_ReportDialog> {
   final _noteCtrl = TextEditingController();
   String? _noteError;
 
-  // ✅ محدَّث — "أخرى" لم تعد موجودة كخيار (غير مسموحة في قيد الـ CHECK)؛
-  // الحقل النصي الآن يظهر ويصبح إجبارياً حصراً مع 'معلومات غير صحيحة'
-  // لأنه النوع الوحيد المسموح له بحمل description في القاعدة الفعلية.
-  bool get _isOther => _selectedType == ReportType.wrongInfo;
+  bool get _isOther => _selectedType == 'other';
 
   @override
   void dispose() {
@@ -1685,14 +1633,6 @@ class _SettingCard extends StatelessWidget {
 // Future.delayed وهمي حتى في وضع الإنتاج. الآن تُحمَّل قوائم المنتجات
 // والمتاجر الحقيقية عبر ProductProvider/StoreProvider، ويحتفظ الاختيار
 // بالـ id الفعلي، والإرسال يمرّ فعلياً عبر PriceProvider.submitPrice.
-//
-// ✅ إصلاح جوهري إضافي (بلا أي تغيير مرئي في شكل الشاشة): حقلا "الوحدة"
-// و"العلامة التجارية" كانا يعتمدان على قائمة وحدات ثابتة (كغ/غرام/...)
-// وMockData.brands على التوالي — نصوص لا معرّفات حقيقية، رغم أن مخطط
-// قاعدة البيانات الفعلي يتطلب unit_id/brand_id (مفتاحان أجنبيان). الآن
-// يُختاران من CatalogProvider.units/brands (مُحمَّلين من الخادم)، بنفس
-// شكل وسلوك القائمتين المنسدلتين تماماً (_IdDropdown نفسها المستخدمة أصلاً
-// لحقلَي المنتج والمحل)، مع الاحتفاظ بمعرّف حقيقي (id) بدل نص فقط.
 // ══════════════════════════════════════════════════════════════════════════════
 class AddPriceScreen extends StatefulWidget {
   const AddPriceScreen({super.key});
@@ -1701,12 +1641,10 @@ class AddPriceScreen extends StatefulWidget {
 }
 
 class _AddPriceScreenState extends State<AddPriceScreen> {
-  // ✅ نستخدم معرّفاً فارغاً '' كقيمة اصطلاحية داخل قائمة العلامات التجارية
-  // تعني "بدون علامة تجارية"، بدل الاعتماد على مطابقة نص اسم كما كان
-  // سابقاً. هذا المعرّف لا يُرسَل للـ backend أبداً (راجع _submit أدناه:
-  // يُترجَم إلى null قبل الإرسال).
-  // Seed data reserves brand id 1 for the explicit no-brand option.
-  static const String _noBrandOption = '1';
+  // ✅ جديد — لا قيمة اختيارية بعد الآن لعلامة تجارية: المستخدم يجب أن يختار
+  // إما علامة حقيقية أو هذا الخيار الصريح "بدون علامة تجارية"، بدل ترك الحقل
+  // فارغاً بصمت كما كان سابقاً.
+  static const String _noBrandOption = 'بدون علامة تجارية';
 
   // ✅ محدَّث — سلسلة اختيار من 3 مستويات: الكتلة الإدارية أولاً، ثم
   // المنطقة/الحي التابع لتلك الكتلة (عبر AleppoBlocks.areasOfBlock)، ثم
@@ -1719,35 +1657,19 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
   String? _selectedStoreId;
   final _priceCtrl = TextEditingController(text: '15000');
   final _qtyCtrl = TextEditingController(text: '1');
-  // ✅ إصلاح جوهري: الوحدة والعلامة التجارية تُختاران الآن بمعرّف حقيقي
-  // (unit_id/brand_id) من قوائم فعلية، لا نص ثابت كما كان.
-  String? _unitId;
-  String _brandId = _noBrandOption;
+  String _unit = 'كغ';
+  // ✅ قيمة افتراضية بدل null — الحقل أصبح إجبارياً بالكامل
+  String? _brand = _noBrandOption;
   bool _loading = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       final productProvider = context.read<ProductProvider>();
       final storeProvider = context.read<StoreProvider>();
-      final catalogProvider = context.read<CatalogProvider>();
       if (productProvider.products.isEmpty) productProvider.loadProducts();
       if (storeProvider.stores.isEmpty) storeProvider.loadStores();
-      // ✅ جديد — تحميل الوحدات والعلامات التجارية الحقيقية من الخادم (أو
-      // MockData في وضع العرض التجريبي) بدل الاعتماد على قوائم ثابتة.
-      if (catalogProvider.units.isEmpty) {
-        await catalogProvider.loadUnits();
-      }
-      if (catalogProvider.brands.isEmpty) {
-        await catalogProvider.loadBrands();
-      }
-      if (!mounted) return;
-      // ✅ تعيين أول وحدة كقيمة افتراضية (يحافظ على نفس تجربة الاستخدام
-      // السابقة التي كانت تبدأ بقيمة مبدئية جاهزة بدل حقل فارغ).
-      if (_unitId == null && catalogProvider.units.isNotEmpty) {
-        setState(() => _unitId = catalogProvider.units.first.id);
-      }
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args is ProductModel) {
         setState(() => _selectedProductId = args.id);
@@ -1809,10 +1731,9 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
           backgroundColor: AppColors.error));
       return;
     }
-    // ✅ محدَّث — التحقق الآن من unitId (معرّف حقيقي) بدل نص وحدة ثابت.
-    if (_unitId == null) {
+    if (_brand == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('يرجى اختيار الوحدة'),
+          content: Text('يرجى اختيار العلامة التجارية'),
           backgroundColor: AppColors.error));
       return;
     }
@@ -1831,9 +1752,12 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
           productId: _selectedProductId!,
           storeId: _selectedStoreId!,
           price: price,
-          unitId: _unitId!,
+          unit: _unit,
           quantity: qty,
-          brandId: _brandId,
+          // ✅ "بدون علامة تجارية" هو خيار عرض فقط — لا يُرسَل للـ backend
+          // كنص، بل يُترجَم إلى عدم إرسال حقل brand أصلاً (راجع
+          // PriceEntry.toJson: `if (brand.isNotEmpty) 'brand': brand`).
+          brand: _brand == _noBrandOption ? null : _brand,
         );
     if (!mounted) return;
     setState(() => _loading = false);
@@ -1856,11 +1780,6 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
   Widget build(BuildContext context) {
     final products = context.watch<ProductProvider>().products;
     final allStores = context.watch<StoreProvider>().stores;
-    // ✅ جديد — الوحدات والعلامات التجارية الحقيقية من الخادم (بدل قائمة
-    // وحدات ثابتة وMockData.brands)، لضمان أن ما يظهر للمستخدم مطابق تماماً
-    // لما يملكه الخادم فعلياً من unit_id/brand_id صالحة للإرسال.
-    final units = context.watch<CatalogProvider>().units;
-    final brands = context.watch<CatalogProvider>().brands;
     // ✅ محدَّث — محلات المنطقة المختارة تحديداً فقط (وليس الكتلة كاملة) —
     // فارغة حتى تُختار منطقة. هذا هو الفلتر الفعلي الذي يحدد قائمة المحل.
     final storesInArea = _selectedArea == null
@@ -1948,14 +1867,11 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
                       children: [
                     _lbl(context, 'الوحدة'),
                     const SizedBox(height: 8),
-                    // ✅ محدَّث — قائمة الوحدات الحقيقية (id → اسم) بدل نصوص
-                    // ثابتة، بنفس شكل وسلوك _IdDropdown المستخدم أصلاً لحقلَي
-                    // المنتج والمحل أعلاه.
-                    _IdDropdown(
+                    _Dropdown(
                         hint: 'الوحدة',
-                        value: _unitId,
-                        items: {for (final u in units) u.id: u.name},
-                        onChanged: (v) => setState(() => _unitId = v)),
+                        value: _unit,
+                        items: const ['كغ', 'غرام', 'لتر', 'قطعة', 'علبة'],
+                        onChanged: (v) => setState(() => _unit = v!)),
                   ])),
             ]),
             const SizedBox(height: 16),
@@ -1968,18 +1884,14 @@ class _AddPriceScreenState extends State<AddPriceScreen> {
             const SizedBox(height: 16),
             _lbl(context, 'العلامة التجارية'),
             const SizedBox(height: 8),
-            // ✅ محدَّث — قائمة العلامات التجارية الحقيقية (id → اسم) بدل
-            // MockData.brands، مع إبقاء خيار "بدون علامة تجارية" في أعلى
-            // القائمة بنفس مكانه وشكله تماماً.
-            _IdDropdown(
+            _Dropdown(
                 hint: 'اختر العلامة التجارية',
-                value: _brandId,
-                items: {
-                  _noBrandOption: 'بدون علامة تجارية',
-                  for (final b in brands) b.id: b.name,
-                },
-                onChanged: (v) =>
-                    setState(() => _brandId = v ?? _noBrandOption)),
+                value: _brand,
+                items: [
+                  _noBrandOption,
+                  ...MockData.brands.map((b) => b.name),
+                ],
+                onChanged: (v) => setState(() => _brand = v)),
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(12),
@@ -2114,9 +2026,53 @@ class _LockedField extends StatelessWidget {
       );
 }
 
-/// ✅ جديد — يحتفظ بمفتاح (id) مستقل عن التسمية
-/// المعروضة، حتى يمكن إرسال product_id/store_id/unit_id/brand_id الحقيقيين
-/// إلى الـ backend بدل الاسم النصي فقط.
+class _Dropdown extends StatelessWidget {
+  final String hint;
+  final String? value;
+  final List<String> items;
+  final ValueChanged<String?> onChanged;
+
+  const _Dropdown(
+      {required this.hint,
+      required this.value,
+      required this.items,
+      required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => DropdownButtonFormField<String>(
+        initialValue: value,
+        hint: Text(hint,
+            style:
+                TextStyle(color: AppColors.textHintOf(context), fontSize: 14)),
+        isExpanded: true,
+        style: TextStyle(color: AppColors.textPrimaryOf(context), fontSize: 14),
+        dropdownColor: AppColors.surfaceOf(context),
+        decoration: InputDecoration(
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.borderOf(context))),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.borderOf(context))),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+          filled: true,
+          fillColor: AppColors.surfaceOf(context),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        items: items
+            .map((item) => DropdownMenuItem(
+                value: item, child: Text(item, textAlign: TextAlign.right)))
+            .toList(),
+        onChanged: onChanged,
+      );
+}
+
+/// ✅ جديد — نفس شكل [_Dropdown] لكن يحتفظ بمفتاح (id) مستقل عن التسمية
+/// المعروضة، حتى يمكن إرسال product_id/store_id الحقيقيين إلى الـ backend
+/// بدل الاسم النصي فقط.
 class _IdDropdown extends StatelessWidget {
   final String hint;
   final String? value;

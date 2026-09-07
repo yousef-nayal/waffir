@@ -44,6 +44,7 @@ class StoreService {
     required String address,
     required String area,
     required String sector,
+    required String locationId,
   }) {
     return _api.post<StoreModel>(
       '/stores',
@@ -52,6 +53,7 @@ class StoreService {
         'address': address,
         'area': area,
         'sector': sector,
+        'location_id': locationId,
       },
       fromJson: (json) =>
           StoreModel.fromJson((json as Map<String, dynamic>)['data'] ?? json),

@@ -633,6 +633,7 @@ class StoreProvider extends ChangeNotifier {
     required String address,
     required String area,
     required String sector,
+    required String locationId,
   }) async {
     if (AppConfig.useMockData) {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -652,7 +653,12 @@ class StoreProvider extends ChangeNotifier {
     }
     try {
       final s = await _service.createStore(
-          name: name, address: address, area: area, sector: sector);
+  name: name,
+  address: address,
+  area: area,
+  sector: sector,
+  locationId: locationId,
+);
       _stores = [..._stores, s];
       notifyListeners();
       return true;
@@ -1010,6 +1016,22 @@ class CatalogProvider extends ChangeNotifier {
   List<Map<String, dynamic>> recentActivity = [];
   bool isLoading = false;
   String? errorMessage;
+    String? locationIdForArea({
+    required String block,
+    required String area,
+  }) {
+    try {
+      final location = locations.firstWhere(
+        (location) =>
+            location.sector.trim() == block.trim() &&
+            location.area.trim() == area.trim(),
+      );
+
+      return location.id;
+    } catch (_) {
+      return null;
+    }
+  }
   // ✅ جديد — سجل تغييرات السعر الرسمي للمادة المفتوحة حالياً
   List<OfficialPriceHistoryEntry> officialPriceHistory = [];
   bool isLoadingHistory = false;

@@ -95,17 +95,30 @@ class _AddStoreScreenState extends State<AddStoreScreen> {
     // ✅ جديد — ترجمة الحي المختار إلى location_id حقيقي قبل الإرسال. في
     // وضع العرض التجريبي هذه القيمة تُتجاهَل تماماً داخل
     // StoreProvider.createStore، فلا تأثير لها على تجربة العرض التجريبي.
-    final locationId =
-        context.read<CatalogProvider>().locationIdForArea(_selectedArea!);
-    setState(() => _loading = true);
+    final catalogProvider = context.read<CatalogProvider>();
 
-    final ok = await context.read<StoreProvider>().createStore(
-          name: name,
-          address: address,
-          area: _selectedArea!,
-          sector: _selectedBlock!,
-          locationId: locationId,
-        );
+final locationId = catalogProvider.locationIdForArea(
+  block: _selectedBlock!,
+  area: _selectedArea!,
+);
+
+if (locationId == null) {
+  _showSnack(
+    'تعذر العثور على الموقع المحدد، يرجى إعادة اختيار المنطقة',
+    isError: true,
+  );
+  return;
+}
+
+setState(() => _loading = true);
+
+final ok = await context.read<StoreProvider>().createStore(
+      name: name,
+      address: address,
+      area: _selectedArea!,
+      sector: _selectedBlock!,
+      locationId: locationId,
+    );
 
     if (!mounted) return;
     setState(() => _loading = false);

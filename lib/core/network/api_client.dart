@@ -33,7 +33,7 @@ class ApiClient {
   // ── Constants ─────────────────────────────────────────────────────────
   // غيّر هذا عند نشر التطبيق، أو مرّره عبر --dart-define=API_BASE_URL=...
   static const String _baseUrl = String.fromEnvironment('API_BASE_URL',
-      defaultValue: 'https://api.waffir.sy/v1');
+      defaultValue: 'https://waffir-production.up.railway.app/v1');
   static const Duration _timeout = Duration(seconds: 30);
 
   String get baseUrl => _baseUrl;

@@ -17,7 +17,7 @@ class AppConfig {
 
   /// true = التطبيق يعرض بيانات وهمية (MockData) لأغراض العرض والتصميم.
   /// false = التطبيق يقرأ وّيكتب من الـ backend الحقيقي عبر ApiClient.
-  static const bool useMockData = true;
+  static const bool useMockData = false;
 
   /// حجم الصفحة الافتراضي لأي endpoint يدعم pagination
   static const int defaultPageSize = 20;

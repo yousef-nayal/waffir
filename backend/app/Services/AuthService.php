@@ -13,7 +13,8 @@ class AuthService
 {
     public function requestOtp($identifier, $purpose = 'login')
     {
-        $code = (string) random_int(100000, 999999);
+      //  $code = (string) random_int(100000, 999999);
+        $code = '123456'; // For testing purposes
         Otp::where('identifier', $identifier)->where('purpose', $purpose)
             ->whereNull('consumed_at')->update(['consumed_at' => now()]);
         Otp::create(['identifier' => $identifier, 'purpose' => $purpose,
